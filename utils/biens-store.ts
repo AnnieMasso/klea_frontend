@@ -58,6 +58,7 @@ export type ContratSpecifique = {
   etat: 'en_attente' | 'signe' | 'annule';
   dateSignature: string;
   dureeMois: number;
+  montant: number;
   lieu: string;
   conditions: string[];
   bailleur: {
@@ -76,6 +77,7 @@ export type PaiementLigne = Paiement & {
   bienId: string;
   bienTitre: string;
   locataire: string;
+  dureeMois: number;
 };
 
 export type SignalementLigne = {
@@ -833,9 +835,14 @@ export function getAllPaiements(): PaiementLigne[] {
         bienId: item.id,
         bienTitre: item.titre,
         locataire: relatedContract?.locataire ?? item.locataireActuel?.nomComplet ?? '-',
+        dureeMois: relatedContract?.dureeMois ?? 0,
       };
     }),
   );
+}
+
+export function getPaiementById(paiementId: string): PaiementLigne | null {
+  return getAllPaiements().find((payment) => payment.id === paiementId) ?? null;
 }
 
 export function getAssuranceHabitationLocataire(locataireId: string, bienId?: string): AssuranceHabitationDetail | null {
@@ -897,6 +904,7 @@ export function getContratSpecifiqueById(contratId: string, bienId?: string): Co
     etat: sourceContrat.etat,
     dateSignature: sourceContrat.dateSignature,
     dureeMois: sourceContrat.dureeMois,
+    montant: sourceContrat.montant,
     lieu: `${sourceBien.adresse}, ${sourceBien.ville ?? '-'}, ${sourceBien.pays ?? sourceBien.quartier ?? '-'}`,
     conditions: sourceContrat.conditions.map((condition) => condition.description),
     bailleur: {

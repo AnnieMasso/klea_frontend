@@ -38,7 +38,7 @@ const actions: Action[] = [
   { title: 'Gérer mes contrats', subtitle: 'Voir et suivre mes contrats en cours', icon: 'document-text-outline', href: '/bailleur/contrats' },
   { title: 'Envoyer un message', subtitle: 'Communiquer avec un locataire ou un administrateur', icon: 'chatbubble-ellipses-outline', href: '/bailleur/conversation' },
   { title: 'Confirmer un départ', subtitle: 'Valider le départ d’un locataire', icon: 'log-out-outline', href: '/bailleur/depart' },
-  { title: 'Signaler un incident', subtitle: 'Créer un signalement pour un bien', icon: 'alert-circle-outline', href: '/bailleur/signalements' },
+  { title: 'Signaler un incident', subtitle: 'Créer un signalement pour un bien', icon: 'alert-circle-outline', href: '/bailleur/sinistres' },
   { title: 'Mes paiements', subtitle: 'Consulter les loyers et paiements reçus', icon: 'card-outline', href: '/bailleur/paiements' },
 
 ];
@@ -59,19 +59,26 @@ export default function BailleurDashboard() {
             title="Tableau de bord"
             right={
               <View style={styles.headerIcons}>
-                <Link href="/bailleur/nouveaubien" asChild>
+                <Link href="/bailleur/nouveau_bien" asChild>
                   <Pressable style={styles.iconButton}>
                     <Ionicons name="add-circle-outline" size={26} color={KleaColors.secondary} />
                   </Pressable>
                 </Link>
-                <Ionicons name="notifications-outline" size={24} color={KleaColors.secondary} />
-                <Ionicons name="person-circle-outline" size={26} color={KleaColors.secondary} style={styles.profileIcon} />
+                <Link href="/bailleur/notifications" asChild>
+                  <Pressable style={styles.iconButton}>
+                    <Ionicons name="notifications-outline" size={26} color={KleaColors.secondary} />
+                  </Pressable>
+                </Link>
+                <Link href="/bailleur/profil" asChild>
+                  <Pressable style={styles.iconButton}>
+                    <Ionicons name="person-circle-outline" size={26} color={KleaColors.secondary} />
+                  </Pressable>
+                </Link>
               </View>
             }
           />
 
           <View style={styles.highlightSection}>
-            <Text style={styles.highlightSectionTitle}>Vue d’ensemble</Text>
             <View style={styles.highlightColumn}>
               <KleaCard style={styles.highlightCard}>
                 <View style={styles.highlightHeader}>
@@ -122,7 +129,7 @@ export default function BailleurDashboard() {
             <KleaCard style={styles.summaryCard}>
               <View style={styles.summaryHeader}>
                 <Ionicons name="alert-circle-outline" size={18} color={KleaColors.secondary} />
-                <Text style={styles.summaryLabel}>Signalements</Text>
+                <Text style={styles.summaryLabel}>Sinistres</Text>
               </View>
               <Text style={styles.summaryValue}>3</Text>
             </KleaCard>
@@ -212,7 +219,7 @@ export default function BailleurDashboard() {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Plus</Text>
 
-              <Link href="/bailleur/signalements" asChild>
+              <Link href="/bailleur/sinistres" asChild>
                 <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
                   <Ionicons name="alert-circle-outline" size={20} color={KleaColors.primary} />
                   <Text style={styles.modalItemText}>Sinistres</Text>
@@ -223,6 +230,12 @@ export default function BailleurDashboard() {
                 <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
                   <Ionicons name="log-out-outline" size={20} color={KleaColors.primary} />
                   <Text style={styles.modalItemText}>Départ</Text>
+                </Pressable>
+              </Link>
+              <Link href="/bailleur/paiements" asChild>
+                <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
+                  <Ionicons name="cash-outline" size={20} color={KleaColors.primary} />
+                  <Text style={styles.modalItemText}>Paiements</Text>
                 </Pressable>
               </Link>
 

@@ -32,7 +32,7 @@ const filterOptions: Array<{ value: FilterValue; label: string }> = [
 	{ value: 'en_location', label: 'En location' },
 	{ value: 'libre', label: 'Libres' },
 	{ value: 'jamais_loue', label: 'Jamais loue' },
-];
+]
 
 const labelsByStatus: Record<OccupationStatut, string> = {
 	en_location: 'En location',
@@ -111,7 +111,7 @@ export default function MesBiensScreen() {
 						subtitle=""
 						right={
 							<View style={styles.headerIcons}>
-								<Link href="/bailleur/nouveaubien" asChild>
+								<Link href="/bailleur/nouveau_bien" asChild>
 									<Pressable style={styles.iconButton}>
 										<Ionicons name="add-circle-outline" size={26} color={KleaColors.secondary} />
 									</Pressable>
@@ -237,7 +237,7 @@ export default function MesBiensScreen() {
 						<View style={styles.modalContent}>
 							<Text style={styles.modalTitle}>Plus</Text>
 
-							<Link href="/bailleur/signalements" asChild>
+							<Link href="/bailleur/sinistres" asChild>
 								<Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
 									<Ionicons name="alert-circle-outline" size={20} color={KleaColors.primary} />
 									<Text style={styles.modalItemText}>Signalement</Text>
@@ -250,6 +250,12 @@ export default function MesBiensScreen() {
 									<Text style={styles.modalItemText}>Depart</Text>
 								</Pressable>
 							</Link>
+                            <Link href="/bailleur/paiements" asChild>
+                                <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
+                                    <Ionicons name="cash-outline" size={20} color={KleaColors.primary} />
+                                    <Text style={styles.modalItemText}>Paiements</Text>
+                                </Pressable>
+                            </Link>
 
 							<Pressable style={styles.modalClose} onPress={() => setMenuOpen(false)}>
 								<Text style={styles.modalCloseText}>Fermer</Text>

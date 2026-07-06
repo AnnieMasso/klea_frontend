@@ -93,7 +93,12 @@ export default function NouveauBienScreen() {
 	};
 
 	const applyCoordinates = async (coords: Coordinates) => {
-		const [address] = await Location.reverseGeocodeAsync(coords);
+		let address: Location.LocationGeocodedAddress | undefined;
+		try {
+			[address] = await Location.reverseGeocodeAsync(coords);
+		} catch {
+			address = undefined;
+		}
 
 		setSelectedCoordinates(coords);
 		setMapRegion((prev: any) => ({
@@ -200,7 +205,7 @@ export default function NouveauBienScreen() {
 	const toggleUsage = (usage: string) => {
 		if (data.usages.includes(usage)) {
 			if (data.usages.length === 1) {
-				setErrors((prev) => ({ ...prev, usages: 'Au moins un usage doit rester selectionne.' }));
+				setErrors((prev) => ({ ...prev, usages: 'Au moins un usage doit etre sélectionné.' }));
 				return;
 			}
 
@@ -316,6 +321,7 @@ export default function NouveauBienScreen() {
 								<Picker selectedValue={data.type} onValueChange={(value) => setField('type', value)} style={styles.picker}>
 									<Picker.Item label="Appartement" value="Appartement" />
 									<Picker.Item label="Maison" value="Maison" />
+                                    <Picker.Item label="Terrain" value="Terrain" />
 									<Picker.Item label="Studio" value="Studio" />
 									<Picker.Item label="Bureau" value="Bureau" />
 									<Picker.Item label="Local commercial" value="Local commercial" />

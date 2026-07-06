@@ -250,7 +250,7 @@ export default function BailleurProfileScreen() {
                     style={styles.input}
                     value={form.email}
                     onChangeText={(v) => updateField('email', v)}
-                    placeholder="nom@exemple.com"
+                    readOnly={true}
                     placeholderTextColor={KleaColors.textMuted}
                     keyboardType="email-address"
                     autoCapitalize="none"

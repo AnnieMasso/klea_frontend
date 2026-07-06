@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
+import { ReauthGate } from '@/components/ui/reauth-gate';
 import { KleaColors } from '@/constants/theme';
 import { getAllPaiements, subscribeBiens } from '@/utils/biens-store';
 
@@ -68,34 +69,41 @@ export default function PaiementsScreen() {
   }, [items, bienFilter, displayMode]);
 
   return (
-    <BailleurScreenShell title="Paiements" subtitle="">
-      <KleaCard style={styles.card}>
-        <Text style={styles.filterTitle}>Afficher les paiements</Text>
-        <View style={styles.filterRow}>
-          <KleaButton title="Par date" variant={displayMode === 'date' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('date')} style={styles.filterButton} />
-          <KleaButton title="Par bien" variant={displayMode === 'bien' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('bien')} style={styles.filterButton} />
-          <KleaButton title="Par locataire" variant={displayMode === 'locataire' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('locataire')} style={styles.filterButton} />
-        </View>
-      </KleaCard>
-
-      {filteredAndSorted.length === 0 ? (
-        <KleaCard><Text style={styles.emptyText}>Aucun paiement disponible.</Text></KleaCard>
-      ) : null}
-
-      {filteredAndSorted.map((payment) => (
-        <KleaCard key={payment.id} style={styles.card}>
-          <Text style={styles.title}>{payment.bienTitre}</Text>
-          <Text style={styles.line}>Locataire: {payment.locataire}</Text>
-          <Text style={styles.line}>Montant: {payment.montant.toLocaleString('fr-FR')} FCFA</Text>
-          <Text style={styles.line}>Date paiement: {new Date(payment.datePaiement).toLocaleDateString('fr-FR')}</Text>
-          <Text style={styles.line}>Mode: {payment.modePaiement}</Text>
-
-          <View style={styles.actions}>
-            <KleaButton title="Voir detail bien" onPress={() => router.push(`/bailleur/detail/${payment.bienId}` as any)} />
+    <ReauthGate reason="voir tous les paiements">
+      <BailleurScreenShell title="Paiements" subtitle="">
+        <KleaCard style={styles.card}>
+          <Text style={styles.filterTitle}>Afficher les paiements</Text>
+          <View style={styles.filterRow}>
+            <KleaButton title="Par date" variant={displayMode === 'date' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('date')} style={styles.filterButton} />
+            <KleaButton title="Par bien" variant={displayMode === 'bien' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('bien')} style={styles.filterButton} />
+            <KleaButton title="Par locataire" variant={displayMode === 'locataire' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('locataire')} style={styles.filterButton} />
           </View>
         </KleaCard>
-      ))}
-    </BailleurScreenShell>
+
+        {filteredAndSorted.length === 0 ? (
+          <KleaCard><Text style={styles.emptyText}>Aucun paiement disponible.</Text></KleaCard>
+        ) : null}
+
+        {filteredAndSorted.map((payment) => (
+          <KleaCard key={payment.id} style={styles.card}>
+            <Text style={styles.title}>{payment.bienTitre}</Text>
+            <Text style={styles.line}>Locataire: {payment.locataire}</Text>
+            <Text style={styles.line}>Montant: {payment.montant.toLocaleString('fr-FR')} FCFA</Text>
+            <Text style={styles.line}>Date paiement: {new Date(payment.datePaiement).toLocaleDateString('fr-FR')}</Text>
+            <Text style={styles.line}>Mode: {payment.modePaiement}</Text>
+
+            <View style={styles.actions}>
+              <KleaButton
+                title="Voir le paiement"
+                variant="secondary"
+                onPress={() => router.push(`/bailleur/facture/${payment.id}` as any)}
+              />
+              <KleaButton title="Voir les détails du bien" onPress={() => router.push(`/bailleur/detail/${payment.bienId}` as any)} />
+            </View>
+          </KleaCard>
+        ))}
+      </BailleurScreenShell>
+    </ReauthGate>
   );
 }
 

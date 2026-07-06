@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
+import { ReauthGate } from '@/components/ui/reauth-gate';
 import { KleaColors } from '@/constants/theme';
 import { getAllAnciensLocataires, subscribeBiens } from '@/utils/biens-store';
 
@@ -50,41 +51,43 @@ export default function MesLocatairesScreen() {
 	}, [items, bienFilter, displayMode]);
 
 	return (
-		<BailleurScreenShell title="Locataires" subtitle="Historique des locataires">
-			<KleaCard style={styles.card}>
-				<Text style={styles.filterTitle}>Afficher tous les locataires</Text>
-				<View style={styles.filterRow}>
-					<KleaButton title="Par date" variant={displayMode === 'date' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('date')} style={styles.filterButton} />
-					<KleaButton title="Par bien" variant={displayMode === 'bien' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('bien')} style={styles.filterButton} />
-				</View>
-			</KleaCard>
-
-			{filteredAndSorted.length === 0 ? (
-				<KleaCard><Text style={styles.emptyText}>Aucun ancien locataire.</Text></KleaCard>
-			) : null}
-
-			{filteredAndSorted.map((item) => (
-				<KleaCard key={item.id} style={styles.card}>
-					<Text style={styles.title}>{item.bienTitre}</Text>
-					<Text style={styles.line}>Locataire: {item.nomComplet}</Text>
-					<Text style={styles.statusLine}>Statut: {item.statut}</Text>
-					<Text style={styles.line}>Telephone: {item.telephone}</Text>
-					<Text style={styles.line}>Email: {item.email}</Text>
-					<View style={styles.actionsColumn}>
-						{item.statut === 'actuel' ? (
-							<KleaButton
-								title="Voir son assurance habitation"
-								variant="secondary"
-								onPress={() => router.push(`/bailleur/assurance/${item.id}?bienId=${item.bienId}` as any)}
-							/>
-						) : (
-							<Text style={styles.restrictedText}>Acces à l'assurance indisponible pour un locataire ancien.</Text>
-						)}
-						<KleaButton title="Voir detail bien" variant="secondary" onPress={() => router.push(`/bailleur/detail/${item.bienId}` as any)} />
+		<ReauthGate reason="voir les details de vos locataires">
+			<BailleurScreenShell title="Locataires" subtitle="Historique des locataires">
+				<KleaCard style={styles.card}>
+					<Text style={styles.filterTitle}>Afficher tous les locataires</Text>
+					<View style={styles.filterRow}>
+						<KleaButton title="Par date" variant={displayMode === 'date' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('date')} style={styles.filterButton} />
+						<KleaButton title="Par bien" variant={displayMode === 'bien' ? 'primary' : 'secondary'} onPress={() => setDisplayMode('bien')} style={styles.filterButton} />
 					</View>
 				</KleaCard>
-			))}
-		</BailleurScreenShell>
+
+				{filteredAndSorted.length === 0 ? (
+					<KleaCard><Text style={styles.emptyText}>Aucun ancien locataire.</Text></KleaCard>
+				) : null}
+
+				{filteredAndSorted.map((item) => (
+					<KleaCard key={item.id} style={styles.card}>
+						<Text style={styles.title}>{item.bienTitre}</Text>
+						<Text style={styles.line}>Locataire: {item.nomComplet}</Text>
+						<Text style={styles.statusLine}>Statut: {item.statut}</Text>
+						<Text style={styles.line}>Telephone: {item.telephone}</Text>
+						<Text style={styles.line}>Email: {item.email}</Text>
+						<View style={styles.actionsColumn}>
+							{item.statut === 'actuel' ? (
+								<KleaButton
+									title="Voir son assurance habitation"
+									variant="secondary"
+									onPress={() => router.push(`/bailleur/assurance/${item.id}?bienId=${item.bienId}` as any)}
+								/>
+							) : (
+								<Text style={styles.restrictedText}>Acces à l'assurance indisponible pour un locataire ancien.</Text>
+							)}
+							<KleaButton title="Voir detail bien" variant="secondary" onPress={() => router.push(`/bailleur/detail/${item.bienId}` as any)} />
+						</View>
+					</KleaCard>
+				))}
+			</BailleurScreenShell>
+		</ReauthGate>
 	);
 }
 

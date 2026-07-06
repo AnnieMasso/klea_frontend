@@ -18,6 +18,7 @@ const bottomActions: BottomAction[] = [
   { title: 'Biens', icon: 'home-outline', href: '/bailleur/mes_biens' },
   { title: 'Messages', icon: 'chatbubble-ellipses-outline', href: '/bailleur/conversation' },
   { title: 'Contrats', icon: 'document-text-outline', href: '/bailleur/contrats' },
+  { title: 'Paiements', icon: 'cash-outline', href: '/bailleur/paiements' },
   { title: 'Profil', icon: 'person-outline', href: '/bailleur/mes_locataires' },
 ];
 
@@ -42,7 +43,7 @@ export function BailleurScreenShell({ title, subtitle, children, contentStyle, s
               subtitle={subtitle}
               right={
                 <View style={styles.headerIcons}>
-                  <Link href="/bailleur/nouveaubien" asChild>
+                  <Link href="/bailleur/nouveau_bien" asChild>
                     <Pressable style={styles.iconButton}>
                       <Ionicons name="add-circle-outline" size={26} color={KleaColors.secondary} />
                     </Pressable>
@@ -70,7 +71,7 @@ export function BailleurScreenShell({ title, subtitle, children, contentStyle, s
               subtitle={subtitle}
               right={
                 <View style={styles.headerIcons}>
-                  <Link href="/bailleur/nouveaubien" asChild>
+                  <Link href="/bailleur/nouveau_bien" asChild>
                     <Pressable style={styles.iconButton}>
                       <Ionicons name="add-circle-outline" size={26} color={KleaColors.secondary} />
                     </Pressable>
@@ -112,10 +113,10 @@ export function BailleurScreenShell({ title, subtitle, children, contentStyle, s
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Plus</Text>
 
-              <Link href="/bailleur/signalements" asChild>
+              <Link href="/bailleur/sinistres" asChild>
                 <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
                   <Ionicons name="alert-circle-outline" size={20} color={KleaColors.primary} />
-                  <Text style={styles.modalItemText}>Signalement</Text>
+                  <Text style={styles.modalItemText}>Sinistres</Text>
                 </Pressable>
               </Link>
 
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   bottomAction: {
-    width: '16.6667%',
+    width: '14.2857%',
     alignItems: 'center',
     justifyContent: 'center',
   },

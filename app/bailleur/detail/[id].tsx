@@ -5,7 +5,9 @@ import { Alert, Image, Modal, Pressable, StyleSheet, Text, View, type ImageSourc
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
+import { ReauthGate } from '@/components/ui/reauth-gate';
 import { KleaColors } from '@/constants/theme';
+import { useReauthConfirm } from '@/hooks/use-reauth-confirm';
 import { confirmDepart, getBienById, getContratStatutAffichage, subscribeBiens, type BienDetail } from '@/utils/biens-store';
 
 const sinistreAssets: Record<string, ImageSourcePropType> = {
@@ -26,6 +28,7 @@ export default function BienDetailScreen() {
 
   const [bien, setBien] = useState<BienDetail | null>(() => (bienId ? getBienById(bienId) : null));
   const [previewImage, setPreviewImage] = useState<ImageSourcePropType | null>(null);
+  const { requestReauth, reauthModal } = useReauthConfirm();
 
   useEffect(() => {
     if (!bienId) return;
@@ -41,19 +44,27 @@ export default function BienDetailScreen() {
 
   if (!bien) {
     return (
-      <BailleurScreenShell title="Detail bien" subtitle="Bien introuvable">
-          <KleaButton title="Retour" variant="secondary" onPress={() => router.back()} />
-      </BailleurScreenShell>
+      <ReauthGate reason="consulter ce bien">
+        <BailleurScreenShell title="Detail bien" subtitle="Bien introuvable">
+            <KleaButton title="Retour" variant="secondary" onPress={() => router.back()} />
+        </BailleurScreenShell>
+      </ReauthGate>
     );
   }
 
-  const handleConfirmDepart = (departId: string) => {
+  const handleConfirmDepart = async (departId: string) => {
+    const identityConfirmed = await requestReauth('confirmer ce depart');
+    if (!identityConfirmed) return;
+
     const ok = confirmDepart(bien.id, departId);
     if (ok) Alert.alert('Depart confirme', 'Le depart preavis a ete confirme.');
   };
 
   return (
+    <ReauthGate reason="consulter les details de ce bien, ses locataires et ses paiements">
     <BailleurScreenShell title="Detail du bien" subtitle={bien.titre}>
+          {reauthModal}
+
           <Modal visible={Boolean(previewImage)} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
             <View style={styles.modalBackdrop}>
               <Pressable style={styles.modalCloseZone} onPress={() => setPreviewImage(null)}>
@@ -242,6 +253,7 @@ export default function BienDetailScreen() {
             ))}
           </KleaCard>
     </BailleurScreenShell>
+    </ReauthGate>
   );
 }
 

@@ -157,8 +157,8 @@ const actions: Action[] = [
   { title: 'Tableau de bord', subtitle: 'Accueil du bailleur', icon: 'speedometer-outline', href: '/bailleur' },
   { title: 'Gérer mes biens', subtitle: 'Ajouter, modifier ou valider un bien', icon: 'home-outline', href: '/bailleur/biens' },
   { title: 'Gérer mes contrats', subtitle: 'Voir et suivre mes contrats en cours', icon: 'document-text-outline', href: '/bailleur/contrats' },
-  { title: 'Envoyer un message', subtitle: 'Communiquer avec un locataire ou un administrateur', icon: 'chatbubble-ellipses-outline', href: '/bailleur/messages' },
-  { title: 'Confirmer un départ', subtitle: 'Valider le départ d\u2019un locataire', icon: 'log-out-outline', href: '/bailleur/departs' },
+  { title: 'Envoyer un message', subtitle: 'Communiquer avec un locataire ou un administrateur', icon: 'chatbubble-ellipses-outline', href: '/bailleur/conversation' },
+  { title: 'Confirmer un départ', subtitle: 'Valider le départ d\u2019un locataire', icon: 'log-out-outline', href: '/bailleur/depart' },
   { title: 'Signaler un incident', subtitle: 'Créer un signalement pour un bien', icon: 'alert-circle-outline', href: '/bailleur/signalements' },
   { title: 'Mes paiements', subtitle: 'Consulter les loyers et paiements reçus', icon: 'card-outline', href: '/bailleur/paiements' },
   { title: 'Mes locataires', subtitle: 'Consulter vos locataires', icon: 'people-outline', href: '/bailleur/locataires' },
@@ -314,6 +314,12 @@ export default function NotificationsScreen() {
                 <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
                   <Ionicons name="log-out-outline" size={20} color={KleaColors.primary} />
                   <Text style={styles.modalItemText}>Départ</Text>
+                </Pressable>
+              </Link>
+              <Link href="/bailleur/paiements" asChild>
+                <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
+                  <Ionicons name="cash-outline" size={20} color={KleaColors.primary} />
+                  <Text style={styles.modalItemText}>Paiements</Text>
                 </Pressable>
               </Link>
 

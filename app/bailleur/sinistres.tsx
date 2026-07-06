@@ -121,7 +121,7 @@ export default function SignalementsScreen() {
 									<Text style={styles.photoCaption}>Photo 2</Text>
 								</Pressable>
 							</View>
-							<KleaButton title="Voir detail bien" variant="secondary" onPress={() => router.push(`/bailleur/detail/${item.bienId}` as any)} />
+							<KleaButton title="Voir le bien concerné" variant="secondary" onPress={() => router.push(`/bailleur/detail/${item.bienId}` as any)} />
 						</KleaCard>
 					))}
 		</BailleurScreenShell>

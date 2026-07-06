@@ -9,18 +9,7 @@ import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaInput } from '@/components/ui/klea-input';
 import { KleaColors } from '@/constants/theme';
-import {
-    annulerContratForBien,
-    createContratForBien,
-    getAllContrats,
-    getAllConversations,
-    getBienById,
-    getContratById,
-    sendMessageToConversation,
-    subscribeBiens,
-    updateContratForBien,
-    type ConversationLigne,
-} from '@/utils/biens-store';
+import {annulerContratForBien, createContratForBien, getAllContrats, getAllConversations, getBienById, getContratById, sendMessageToConversation, subscribeBiens, updateContratForBien, type ConversationLigne } from '@/utils/biens-store';
 
 const profileImageSource = require('../../assets/images/icon.png');
 
@@ -59,7 +48,7 @@ export default function ConversationScreen() {
 	const [contractDateSignature, setContractDateSignature] = useState(todayIso);
 	const [contractMontant, setContractMontant] = useState('');
 	const [contractConditions, setContractConditions] = useState<string[]>(['']);
-	const [contractDureeMois, setContractDureeMois] = useState('12');
+	const [contractDureeMois, setContractDureeMois] = useState('');
 
 	useEffect(() => {
 		setConversations(getAllConversations());
@@ -86,6 +75,9 @@ export default function ConversationScreen() {
 		() => getAllContrats().filter((contract) => contract.conversationId === selectedConversation?.id),
 		[selectedConversation?.id, conversations],
 	);
+	const hasSignedContract = contractsForSelectedConversation.some((contract) => contract.etat === 'signe');
+	const hasPendingContract = contractsForSelectedConversation.some((contract) => contract.etat === 'en_attente');
+	const canEstablishContract = hasPendingContract || !hasSignedContract;
 
 	useEffect(() => {
 		if (!selectedConversation) {
@@ -100,7 +92,7 @@ export default function ConversationScreen() {
 		setContractEtat('en_attente');
 		setContractDateSignature(todayIso);
 		setContractMontant(String(relatedBien?.montant ?? ''));
-		setContractDureeMois('12');
+		setContractDureeMois('');
 		setContractConditions(['']);
 		setShowContractForm(false);
 	}, [selectedConversation, todayIso]);
@@ -116,7 +108,7 @@ export default function ConversationScreen() {
 		setContractEtat('en_attente');
 		setContractDateSignature(baseContract?.dateSignature ?? todayIso);
 		setContractMontant(String(baseContract?.montant ?? relatedBien?.montant ?? ''));
-		setContractDureeMois(String(baseContract?.dureeMois ?? 12));
+		setContractDureeMois(String(baseContract?.dureeMois ));
 		setContractConditions(baseContract ? baseContract.conditions.map((condition) => condition.description) : ['']);
 		setShowContractForm(true);
 	};
@@ -158,6 +150,10 @@ export default function ConversationScreen() {
 
 	const handleCreateContract = () => {
 		if (!selectedConversation) return;
+		if (!editingContractId && !canEstablishContract) {
+			Alert.alert('Contrat deja signe', 'Un contrat est deja signe pour cette conversation.');
+			return;
+		}
 		const relatedBien = getBienById(selectedConversation.bienId);
 		if (!relatedBien) {
 			Alert.alert('Bien introuvable', 'Impossible de retrouver le bien lie a cette conversation.');
@@ -215,7 +211,7 @@ export default function ConversationScreen() {
 			setShowContractForm(false);
 			setEditingContractId(null);
 		}
-		Alert.alert('Contrat annule', 'Le contrat a ete annule avant signature.');
+		Alert.alert('Contrat annule', 'Le contrat a ete annule avant la signature.');
 	};
 
 	const handleOpenConversation = (conversationId: string) => {
@@ -250,13 +246,17 @@ export default function ConversationScreen() {
 						</View>
 					</View>
 
-					<KleaButton
-						title={showContractForm ? 'Annuler' : 'Etablir un contrat'}
-						icon="document-text-outline"
-						variant="secondary"
-						onPress={handleToggleContractForm}
-						style={styles.contractButton}
-					/>
+					{canEstablishContract ? (
+						<KleaButton
+							title={showContractForm ? 'Annuler' : 'Etablir un contrat'}
+							icon="document-text-outline"
+							variant="secondary"
+							onPress={handleToggleContractForm}
+							style={styles.contractButton}
+						/>
+					) : (
+						<Text style={styles.contractLockedText}>Un contrat est deja signe pour cette conversation.</Text>
+					)}
 
 					{showContractForm ? (
 						<KleaCard style={styles.contractFormCard}>
@@ -489,6 +489,12 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	contractButton: {
+		marginBottom: 10,
+	},
+	contractLockedText: {
+		color: KleaColors.textMuted,
+		fontSize: 12,
+		lineHeight: 18,
 		marginBottom: 10,
 	},
 	emptyText: {

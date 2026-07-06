@@ -7,6 +7,7 @@ import { Alert, Platform, StyleSheet, Text } from 'react-native';
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
+import { ReauthGate } from '@/components/ui/reauth-gate';
 import { KleaColors } from '@/constants/theme';
 import { getAllContrats, getContratSpecifiqueById, getContratStatutAffichage } from '@/utils/biens-store';
 
@@ -54,13 +55,13 @@ export default function ContratSpecifiqueScreen() {
         </head>
         <body>
           <h1>Contrat de bail</h1>
-          <p class="muted">Reference: ${escapeHtml(contrat.id)}</p>
           <div class="block">
             <h2>Informations du contrat</h2>
             <p><strong>Bien:</strong> ${escapeHtml(contrat.bienTitre)}</p>
             <p><strong>Type:</strong> ${escapeHtml(contrat.typeBien)}</p>
             <p><strong>Type de contrat:</strong> ${escapeHtml(contrat.typeContrat === 'indetermine' ? 'Contrat a duree indeterminee' : 'Contrat a duree determinee')}</p>
             <p><strong>Duree:</strong> ${escapeHtml(String(contrat.dureeMois))} mois</p>
+            <p><strong>Montant du loyer:</strong> ${contrat.montant.toLocaleString('fr-FR')} FCFA</p>
             <p><strong>Lieu:</strong> ${escapeHtml(contrat.lieu)}</p>
             <p><strong>Date de signature:</strong> ${escapeHtml(contrat.dateSignature)}</p>
             <p><strong>Etat:</strong> ${escapeHtml(contrat.etat === 'en_attente' ? 'En attente' : contrat.etat === 'signe' ? 'Signe' : 'Annule')}</p>
@@ -92,10 +93,22 @@ export default function ContratSpecifiqueScreen() {
     setIsGeneratingPdf(true);
     try {
       const html = toPdfHtml();
+
+      if (Platform.OS === 'web') {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(html);
+          printWindow.document.close();
+          printWindow.focus();
+          printWindow.print();
+        }
+        return;
+      }
+
       const result = await Print.printToFileAsync({ html });
       const sharingAvailable = await Sharing.isAvailableAsync();
 
-      if (sharingAvailable && Platform.OS !== 'web') {
+      if (sharingAvailable) {
         await Sharing.shareAsync(result.uri, {
           UTI: '.pdf',
           mimeType: 'application/pdf',
@@ -105,7 +118,7 @@ export default function ContratSpecifiqueScreen() {
         await Print.printAsync({ html });
       }
     } catch {
-      Alert.alert('Erreur', 'Impossible de generer le PDF pour le moment.');
+      Alert.alert('Impossible de télécharger le contrat.');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -113,27 +126,31 @@ export default function ContratSpecifiqueScreen() {
 
   if (!contrat) {
     return (
-      <BailleurScreenShell title="Contrat de bail" subtitle="Introuvable">
-        <KleaCard>
-          <Text style={styles.emptyText}>Le contrat demande est introuvable.</Text>
-        </KleaCard>
-      </BailleurScreenShell>
+      <ReauthGate reason="consulter ce contrat">
+        <BailleurScreenShell title="Contrat de bail" subtitle="Introuvable">
+          <KleaCard>
+            <Text style={styles.emptyText}>Le contrat demandé est introuvable.</Text>
+          </KleaCard>
+        </BailleurScreenShell>
+      </ReauthGate>
     );
   }
 
   return (
+    <ReauthGate reason="consulter ce contrat">
     <BailleurScreenShell title="Contrat de bail" subtitle={contrat.bienTitre}>
       <KleaCard style={styles.card}>
         <Text style={styles.sectionTitle}>Informations du contrat</Text>
         <Text style={styles.line}>Type de bien: {contrat.typeBien}</Text>
         <Text style={styles.line}>Type de contrat: {contrat.typeContrat === 'indetermine' ? 'Contrat a duree indeterminee' : 'Contrat a duree determinee'}</Text>
         <Text style={styles.line}>Duree: {contrat.dureeMois} mois</Text>
+        <Text style={styles.line}>Montant du loyer: {contrat.montant.toLocaleString('fr-FR')} FCFA</Text>
         <Text style={styles.line}>Lieu: {contrat.lieu}</Text>
         <Text style={styles.line}>Date de signature: {contrat.dateSignature}</Text>
         <Text style={styles.line}>Etat: {contrat.etat === 'en_attente' ? 'En attente' : contrat.etat === 'signe' ? 'Signe' : 'Annule'}</Text>
         <Text style={styles.statusLine}>Statut: {contratBrut ? getContratStatutAffichage(contratBrut) : 'en cours'}</Text>
         <KleaButton
-          title={isGeneratingPdf ? 'Generation du PDF...' : 'Generer le PDF du contrat'}
+          title={isGeneratingPdf ? 'Generation du PDF...' : 'Télécharger le contrat'}
           variant="secondary"
           onPress={handleGeneratePdf}
           disabled={isGeneratingPdf}
@@ -163,6 +180,7 @@ export default function ContratSpecifiqueScreen() {
         ))}
       </KleaCard>
     </BailleurScreenShell>
+    </ReauthGate>
   );
 }
 
