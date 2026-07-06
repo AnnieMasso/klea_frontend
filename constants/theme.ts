@@ -8,13 +8,42 @@ import { Platform } from 'react-native';
 const tintColorLight = '#0a7ea4';
 const tintColorDark = '#fff';
 
+export const KleaColors = {
+  primary: '#10322F',
+  secondary: '#14463D',
+  accent: '#E9A23B',
+  background: '#F7F4EE',
+  surface: '#FFFFFF',
+  border: '#E4DCCF',
+  textMuted: '#4E6A63',
+  success: '#2F8F5E',
+  error: '#C94D3C',
+};
+
+export const KleaRadius = {
+  sm: 10,
+  md: 14,
+  lg: 18,
+  xl: 24,
+};
+
+export const KleaShadow = {
+  card: {
+    shadowColor: '#10322F',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+};
+
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
+    text: KleaColors.primary,
+    background: KleaColors.background,
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    icon: KleaColors.textMuted,
+    tabIconDefault: KleaColors.textMuted,
     tabIconSelected: tintColorLight,
   },
   dark: {

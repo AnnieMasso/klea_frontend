@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 410 130" width="410" height="130">
+  <svg x="0" y="13" width="104" height="104" viewBox="16 8 80 80">
+  <rect x="24" y="18" width="12" height="64" rx="3" fill="#10322F"></rect>
+  <line x1="40" y1="50" x2="80" y2="20" stroke="#10322F" stroke-width="12" stroke-linecap="round"></line>
+  <line x1="40" y1="50" x2="80" y2="80" stroke="#10322F" stroke-width="12" stroke-linecap="round"></line>
+  <circle cx="40" cy="50" r="10" fill="none" stroke="#E9A23B" stroke-width="6"></circle>
+  </svg>
+  <svg x="112" y="0" width="298" height="130" viewBox="-6 0 298 130">
+  <g fill="none" stroke="#10322F" stroke-width="14" stroke-linecap="butt" stroke-linejoin="round">
+    <line x1="7" y1="18" x2="7" y2="118"></line>
+    <line x1="12" y1="68" x2="60" y2="18"></line>
+    <line x1="12" y1="68" x2="60" y2="118"></line>
+    <line x1="91" y1="18" x2="91" y2="118"></line>
+    <line x1="131.3" y1="79" x2="186.7" y2="79"></line>
+    <path d="M186.7,79 A28,28 0 1 0 180.4,101"></path>
+    <circle cx="251" cy="83" r="28"></circle>
+    <line x1="279" y1="48" x2="279" y2="118"></line>
+  </g>
+  <line x1="151" y1="34" x2="168" y2="20" stroke="#E9A23B" stroke-width="13" stroke-linecap="butt"></line>
+  </svg>
+</svg>

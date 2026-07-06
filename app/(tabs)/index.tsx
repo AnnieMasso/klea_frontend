@@ -1,98 +1,189 @@
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Link } from 'expo-router';
+import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function HomeScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={styles.container}>
+      <Image
+        source={require('@/assets/images/maison.jpg')}
+        style={StyleSheet.absoluteFillObject}
+        contentFit="cover"
+      />
+      <View style={styles.overlay} />
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.heroCard}>
+            <View style={styles.logoBlock}>
+              <Image
+                source={require('@/assets/images/klea-logo-horizontal-color.svg')}
+                style={styles.logo}
+                contentFit="contain"
+              />
+            </View>
+
+            <View style={styles.contentBlock}>
+              <Text style={styles.title}>Votre expérience de location, simplifiée.</Text>
+              <Text style={styles.subtitle}>
+                Gérez vos logements, vos documents et vos démarches en toute confiance depuis un seul espace.
+              </Text>
+
+              <View style={styles.actions}>
+                <Link href="/register" asChild>
+                  <Pressable style={styles.primaryButton}>
+                    <Text style={styles.primaryButtonText}>Créer un compte</Text>
+                  </Pressable>
+                </Link>
+
+                <Link href="/login" asChild>
+                  <Pressable style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonText}>Se connecter</Text>
+                  </Pressable>
+                </Link>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.infoGrid}>
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Sécurisé</Text>
+              <Text style={styles.infoText}>Vos documents et accès sont protégés au sein d’un espace fiable.</Text>
+            </View>
+
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Rapide</Text>
+              <Text style={styles.infoText}>Accédez à vos démarches en quelques secondes, où que vous soyez.</Text>
+            </View>
+
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Clair</Text>
+              <Text style={styles.infoText}>Une interface simple, moderne et pensée pour vous accompagner.</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: '#10322F',
   },
-  stepContainer: {
-    gap: 8,
+  safeArea: {
+    flex: 1,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(16, 50, 47, 0.72)',
+  },
+  content: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 20,
+    paddingTop: 32,
+    paddingBottom: 40,
+  },
+  logoBlock: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 16,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E0D3',
+  },
+  logo: {
+    width: 220,
+    height: 66,
+  },
+  contentBlock: {
+    gap: 10,
+    backgroundColor: '#F7F4EE',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E8E0D3',
+  },
+  heroCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(228, 220, 207, 0.85)',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  eyebrow: {
+    color: '#E9A23B',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  title: {
+    color: '#10322F',
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 10,
+    lineHeight: 34,
+  },
+  subtitle: {
+    color: '#4E6A63',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 18,
+  },
+  actions: {
+    gap: 10,
+  },
+  primaryButton: {
+    backgroundColor: '#E9A23B',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#10322F',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  secondaryButton: {
+    backgroundColor: '#DDE7E2',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#10322F',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  infoGrid: {
+    marginTop: 18,
+    gap: 12,
+  },
+  infoCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(228, 220, 207, 0.85)',
+  },
+  infoTitle: {
+    color: '#10322F',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  infoText: {
+    color: '#4E6A63',
+    fontSize: 13,
+    lineHeight: 20,
   },
 });
