@@ -95,6 +95,17 @@ export default function RegisterScreen() {
     return true;
   };
 
+  const validateStep2 = () => {
+    const nextErrors: Record<string, string> = {};
+
+    if (!form.cniVerso.trim()) nextErrors.cniVerso = 'Veuillez ajouter le recto de votre CNI.';
+    if (!form.cniRecto.trim()) nextErrors.cniRecto = 'Veuillez ajouter le verso de votre CNI.';
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return false;
+    return true;
+  };
+
   const validateStep3 = () => {
     const nextErrors: Record<string, string> = {};
 
@@ -151,6 +162,10 @@ export default function RegisterScreen() {
   };
 
   const handleSubmit = () => {
+    if (showStep2 && !validateStep2()) {
+      setStep(2);
+      return;
+    }
     if (!validateStep3()) return;
     setIsSubmitting(true);
     setTimeout(() => {
@@ -196,7 +211,7 @@ export default function RegisterScreen() {
 
         {step === 1 && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Étape 1 · Informations principales</Text>
+            <Text style={styles.cardTitle}>Informations principales</Text>
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Nom</Text>
@@ -291,24 +306,26 @@ export default function RegisterScreen() {
 
         {step === 2 && showStep2 && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Étape 2 · Documents complémentaires</Text>
+            <Text style={styles.cardTitle}>Documents complémentaires</Text>
             <Text style={styles.helperText}>Veuillez fournir votre carte d'identité et une assurance habitation si vous en avez</Text>
             <View style={styles.uploadCard}>
               <Text style={styles.uploadTitle}>CNI recto</Text>
               <Pressable style={styles.uploadButton} onPress={() => pickImage('cniVerso')}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#10322F" />
-                <Text style={styles.uploadButtonText}>Choisir une photo</Text>
+                <Text style={styles.uploadButtonText}>Ajouter le recto de votre CNI</Text>
               </Pressable>
               {form.cniVerso ? <Text style={styles.fileName}>Sélection : {form.cniVerso.split('/').pop()}</Text> : null}
+              {errors.cniVerso ? <Text style={styles.errorText}>{errors.cniVerso}</Text> : null}
             </View>
 
             <View style={styles.uploadCard}>
               <Text style={styles.uploadTitle}>CNI versorecto</Text>
               <Pressable style={styles.uploadButton} onPress={() => pickImage('cniRecto')}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#10322F" />
-                <Text style={styles.uploadButtonText}>Choisir une photo</Text>
+                <Text style={styles.uploadButtonText}>Ajouter le verso de votre CNI</Text>
               </Pressable>
               {form.cniRecto ? <Text style={styles.fileName}>Sélection : {form.cniRecto.split('/').pop()}</Text> : null}
+              {errors.cniRecto ? <Text style={styles.errorText}>{errors.cniRecto}</Text> : null}
             </View>
 
             {showAssuranceField ? (
@@ -316,7 +333,7 @@ export default function RegisterScreen() {
                 <Text style={styles.uploadTitle}>Assurance habitation</Text>
                 <Pressable style={styles.uploadButton} onPress={pickDocument}>
                   <Ionicons name="document-outline" size={18} color="#10322F" />
-                  <Text style={styles.uploadButtonText}>Ajouter un fichier</Text>
+                  <Text style={styles.uploadButtonText}>Ajouter le fichier de votre assurance habitation</Text>
                 </Pressable>
                 {form.assuranceHabitation ? <Text style={styles.fileName}>Sélection : {form.assuranceHabitation}</Text> : null}
               </View>
@@ -326,7 +343,7 @@ export default function RegisterScreen() {
               <Pressable style={styles.secondaryButton} onPress={() => setStep(1)}>
                 <Text style={styles.secondaryButtonText}>Précédent</Text>
               </Pressable>
-              <Pressable style={styles.primaryButton} onPress={() => setStep(3)}>
+              <Pressable style={styles.primaryButton} onPress={() => { if (validateStep2()) setStep(3); }}>
                 <Text style={styles.primaryButtonText}>Continuer</Text>
               </Pressable>
             </View>
@@ -335,7 +352,7 @@ export default function RegisterScreen() {
 
         {step === 3 && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Étape 3 · Sécurité</Text>
+            <Text style={styles.cardTitle}>Sécurité</Text>
             <Text style={styles.helperText}>Définissez un mot de passe pour finaliser l’inscription.</Text>
 
             <View style={styles.inputGroup}>
