@@ -23,6 +23,7 @@ import {
     resetRegistrationDraft,
     updateRegistrationDraft,
 } from '../utils/registration-draft';
+import { createBailleurAccount, createLocataireAccount } from '../utils/biens-store';
 
 const roleOptions = [
   { label: 'Sélectionnez un rôle', value: '' },
@@ -170,10 +171,30 @@ export default function RegisterScreen() {
     setIsSubmitting(true);
     setTimeout(() => {
       setIsSubmitting(false);
+      if (form.role === 'bailleur') {
+        createBailleurAccount({
+          nom: form.nom.trim(),
+          prenom: form.prenom.trim(),
+          email: form.email.trim(),
+          cniRecto: form.cniRecto || undefined,
+          cniVerso: form.cniVerso || undefined,
+        });
+      } else if (form.role === 'locataire') {
+        createLocataireAccount({
+          nom: form.nom.trim(),
+          prenom: form.prenom.trim(),
+          email: form.email.trim(),
+          cniRecto: form.cniRecto || undefined,
+          cniVerso: form.cniVerso || undefined,
+          assuranceHabitation: form.assuranceHabitation || undefined,
+        });
+      }
       resetRegistrationDraft();
-      Alert.alert('Inscription réussie', 'Votre compte a été préparé avec succès.');
+      Alert.alert('Inscription réussie', 'Votre compte a été créé et est en attente de validation par l\'administrateur.');
       if (form.role === 'bailleur') {
         router.replace('/bailleur');
+      } else if (form.role === 'locataire') {
+        router.replace('/locataire' as any);
       } else {
         router.replace('/login');
       }
