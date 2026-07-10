@@ -96,7 +96,7 @@ export default function BailleurDashboard() {
                   <Ionicons name="cash-outline" size={20} color={KleaColors.secondary} />
                   <Text style={styles.highlightLabel}>Revenus du mois</Text>
                 </View>
-                <Text style={styles.highlightValue}>{'334 000 €'}</Text>
+                <Text style={styles.highlightValue}>{'334 000 FCFA'}</Text>
               </KleaCard>
               <KleaCard style={styles.highlightCard}>
                 <View style={styles.highlightHeader}>

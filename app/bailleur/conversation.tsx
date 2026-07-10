@@ -9,7 +9,7 @@ import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaInput } from '@/components/ui/klea-input';
 import { KleaColors } from '@/constants/theme';
-import {annulerContratForBien, createContratForBien, getAllContrats, getAllConversations, getBienById, getContratById, sendMessageToConversation, subscribeBiens, updateContratForBien, type ConversationLigne } from '@/utils/biens-store';
+import { CURRENT_BAILLEUR_ID, annulerContratForBien, createContratForBien, getAllContrats, getBienById, getContratById, getConversationsForParticipant, sendMessageToConversation, subscribeBiens, updateContratForBien, type ConversationLigne } from '@/utils/biens-store';
 
 const profileImageSource = require('../../assets/images/icon.png');
 
@@ -38,7 +38,7 @@ export default function ConversationScreen() {
 	const requestedConversationId = typeof params.conversationId === 'string' ? params.conversationId : '';
 	const todayIso = new Date().toISOString().slice(0, 10);
 
-	const [conversations, setConversations] = useState<ConversationLigne[]>(() => getAllConversations());
+	const [conversations, setConversations] = useState<ConversationLigne[]>(() => getConversationsForParticipant(CURRENT_BAILLEUR_ID));
 	const [selectedConversationId, setSelectedConversationId] = useState(requestedConversationId);
 	const [draft, setDraft] = useState('');
 	const [showContractForm, setShowContractForm] = useState(false);
@@ -51,8 +51,8 @@ export default function ConversationScreen() {
 	const [contractDureeMois, setContractDureeMois] = useState('');
 
 	useEffect(() => {
-		setConversations(getAllConversations());
-		const unsubscribe = subscribeBiens(() => setConversations(getAllConversations()));
+		setConversations(getConversationsForParticipant(CURRENT_BAILLEUR_ID));
+		const unsubscribe = subscribeBiens(() => setConversations(getConversationsForParticipant(CURRENT_BAILLEUR_ID)));
 		return unsubscribe;
 	}, []);
 

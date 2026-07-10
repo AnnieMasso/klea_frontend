@@ -3,7 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import {Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaCard } from '@/components/ui/klea-card';
@@ -143,6 +143,17 @@ export default function BailleurProfileScreen() {
     setPasswordModalOpen(false);
     setPasswordForm({ current: '', next: '', confirm: '' });
     Alert.alert('Mot de passe modifié', 'Votre mot de passe a été mis à jour avec succès.');
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Deconnexion', 'Voulez-vous vous deconnecter de votre compte ?', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Se deconnecter',
+        style: 'destructive',
+        onPress: () => router.replace('/login'),
+      },
+    ]);
   };
 
   const confirmDeleteAccount = () => {
@@ -302,6 +313,19 @@ export default function BailleurProfileScreen() {
                 <Text style={styles.securitySubtitle}>••••••••</Text>
               </View>
               <Text style={styles.securityAction}>Modifier</Text>
+            </Pressable>
+
+            <View style={styles.divider} />
+
+            <Pressable style={styles.securityRow} onPress={handleLogout}>
+              <View style={[styles.securityIconCircle, styles.logoutIconCircle]}>
+                <Ionicons name="log-out-outline" size={18} color={semantic.error} />
+              </View>
+              <View style={styles.securityTextWrap}>
+                <Text style={styles.securityTitle}>Deconnexion</Text>
+                <Text style={styles.securitySubtitle}>Fermer votre session en cours</Text>
+              </View>
+              <Text style={styles.logoutAction}>Se deconnecter</Text>
             </Pressable>
           </KleaCard>
 
@@ -740,6 +764,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: KleaColors.secondary,
+  },
+  logoutIconCircle: {
+    backgroundColor: semantic.errorBg,
+  },
+  logoutAction: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: semantic.error,
   },
 
   // ---- Zone de danger ----

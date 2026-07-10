@@ -1,12 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link, usePathname } from 'expo-router';
-import { useState, type ComponentProps } from 'react';
-import {Modal, Pressable, ScrollView, StyleSheet, Text, View,} from 'react-native';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
-
+import {
+  getNotificationsForRecipient,
+  markAllNotificationsRead,
+  markNotificationRead,
+  subscribeBiens,
+  type AppNotification,
+  type NotificationType,
+} from '@/utils/biens-store';
 
 const semantic = {
   success: '#0F7048',
@@ -20,131 +27,24 @@ const semantic = {
   accentSoft: '#FBEFD7',
 };
 
-type NotificationType = 'payment' | 'signalement' | 'contract' | 'message' | 'system';
-
-type NotificationItem = {
-  id: string;
-  type: NotificationType;
-  title: string;
-  subtitle: string;
-  detail: string;
-  time: string;
-  date: string;
-  unread: boolean;
-  meta?: { label: string; value: string }[];
-  actionLabel?: string;
-  actionHref?: string;
-};
-
 const typeMeta: Record<
   NotificationType,
-  { icon: ComponentProps<typeof Ionicons>['name']; color: string; bg: string }
+  { icon: ComponentProps<typeof Ionicons>['name']; color: string; bg: string; actionLabel: string }
 > = {
-  payment: { icon: 'card-outline', color: semantic.success, bg: semantic.successBg },
-  signalement: { icon: 'alert-circle-outline', color: semantic.warning, bg: semantic.warningBg },
-  contract: { icon: 'document-text-outline', color: semantic.info, bg: semantic.infoBg },
-  message: { icon: 'chatbubble-ellipses-outline', color: KleaColors.secondary, bg: semantic.accentSoft },
-  system: { icon: 'close-circle-outline', color: semantic.error, bg: semantic.errorBg },
+  payment: { icon: 'card-outline', color: semantic.success, bg: semantic.successBg, actionLabel: 'Voir les paiements' },
+  contract: { icon: 'document-text-outline', color: semantic.info, bg: semantic.infoBg, actionLabel: 'Voir le contrat' },
+  conversation: { icon: 'people-outline', color: KleaColors.secondary, bg: semantic.accentSoft, actionLabel: 'Voir la conversation' },
+  message: { icon: 'chatbubble-ellipses-outline', color: KleaColors.secondary, bg: semantic.accentSoft, actionLabel: 'Repondre' },
+  bien: { icon: 'home-outline', color: semantic.warning, bg: semantic.warningBg, actionLabel: 'Voir mes biens' },
+  compte: { icon: 'shield-checkmark-outline', color: semantic.success, bg: semantic.successBg, actionLabel: 'Voir mon profil' },
+  avertissement: { icon: 'warning-outline', color: semantic.error, bg: semantic.errorBg, actionLabel: 'Voir mon profil' },
 };
 
-const sections: { label: string; data: NotificationItem[] }[] = [
-  {
-    label: "Aujourd'hui",
-    data: [
-      {
-        id: '1',
-        type: 'payment',
-        title: 'Loyer payé avec succès',
-        subtitle: 'Appartement 2 chambres · Bonapriso — 120 000 FCFA',
-        detail:
-          'Le loyer du mois de mars a été payé via Orange Money. Le montant a été crédité sur votre compte Kléa et sera versé selon votre calendrier de reversement habituel.',
-        time: '09:41',
-        date: 'Aujourd\u2019hui, 6 juillet 2026',
-        unread: true,
-        meta: [
-          { label: 'Montant', value: '120 000 FCFA' },
-          { label: 'Moyen de paiement', value: 'Orange Money' },
-          { label: 'Bien', value: 'Appartement 2 chambres · Bonapriso' },
-          { label: 'Locataire', value: 'Aïcha M.' },
-        ],
-        actionLabel: 'Voir le paiement',
-        actionHref: '/bailleur/paiements',
-      },
-      {
-        id: '2',
-        type: 'signalement',
-        title: 'Nouveau signalement reçu',
-        subtitle: 'Fuite d\u2019eau signalée · Studio Akwa',
-        detail:
-          'Le locataire du studio meublé à Akwa a signalé une fuite d\u2019eau dans la salle de bain. Une intervention est recommandée dans les meilleurs délais pour éviter des dégâts supplémentaires.',
-        time: '08:15',
-        date: 'Aujourd\u2019hui, 6 juillet 2026',
-        unread: true,
-        meta: [
-          { label: 'Bien', value: 'Studio meublé · Akwa' },
-          { label: 'Gravité', value: 'Modérée' },
-          { label: 'Locataire', value: 'Paul E.' },
-        ],
-        actionLabel: 'Voir le signalement',
-        actionHref: '/bailleur/signalements',
-      },
-      {
-        id: '3',
-        type: 'message',
-        title: 'Nouveau message',
-        subtitle: 'Le locataire du studio meublé a répondu',
-        detail:
-          '« Oui, disponible dès le 1er. Une visite ? » — Le locataire a répondu à votre proposition concernant la reconduction du bail.',
-        time: '07:52',
-        date: 'Aujourd\u2019hui, 6 juillet 2026',
-        unread: false,
-        meta: [{ label: 'Conversation', value: 'Studio meublé · Akwa' }],
-        actionLabel: 'Répondre',
-        actionHref: '/bailleur/messages',
-      },
-    ],
-  },
-  {
-    label: 'Cette semaine',
-    data: [
-      {
-        id: '4',
-        type: 'contract',
-        title: 'Contrat en attente de signature',
-        subtitle: 'Bail · Appartement Bonapriso',
-        detail:
-          'Le contrat de bail pour l\u2019appartement 2 chambres à Bonapriso est prêt et attend votre signature électronique pour être finalisé.',
-        time: 'Lun',
-        date: 'Lundi, 30 juin 2026',
-        unread: false,
-        meta: [
-          { label: 'Bien', value: 'Appartement 2 chambres · Bonapriso' },
-          { label: 'Statut', value: 'En cours' },
-        ],
-        actionLabel: 'Consulter le contrat',
-        actionHref: '/bailleur/contrats',
-      },
-      {
-        id: '5',
-        type: 'system',
-        title: 'Paiement refusé',
-        subtitle: 'Solde insuffisant · Orange Money',
-        detail:
-          'La tentative de paiement du loyer via Orange Money a échoué en raison d\u2019un solde insuffisant sur le compte du locataire. Une nouvelle tentative sera proposée automatiquement.',
-        time: 'Dim',
-        date: 'Dimanche, 29 juin 2026',
-        unread: false,
-        meta: [
-          { label: 'Montant', value: '75 000 FCFA' },
-          { label: 'Moyen de paiement', value: 'Orange Money' },
-          { label: 'Statut', value: 'Échoué' },
-        ],
-        actionLabel: 'Voir les paiements',
-        actionHref: '/bailleur/paiements',
-      },
-    ],
-  },
-];
+function isToday(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  return date.toDateString() === now.toDateString();
+}
 
 type Action = {
   title: string;
@@ -155,44 +55,43 @@ type Action = {
 
 const actions: Action[] = [
   { title: 'Tableau de bord', subtitle: 'Accueil du bailleur', icon: 'speedometer-outline', href: '/bailleur' },
-  { title: 'Gérer mes biens', subtitle: 'Ajouter, modifier ou valider un bien', icon: 'home-outline', href: '/bailleur/biens' },
+  { title: 'Gérer mes biens', subtitle: 'Ajouter, modifier ou valider un bien', icon: 'home-outline', href: '/bailleur/mes_biens' },
   { title: 'Gérer mes contrats', subtitle: 'Voir et suivre mes contrats en cours', icon: 'document-text-outline', href: '/bailleur/contrats' },
   { title: 'Envoyer un message', subtitle: 'Communiquer avec un locataire ou un administrateur', icon: 'chatbubble-ellipses-outline', href: '/bailleur/conversation' },
-  { title: 'Confirmer un départ', subtitle: 'Valider le départ d\u2019un locataire', icon: 'log-out-outline', href: '/bailleur/depart' },
-  { title: 'Signaler un incident', subtitle: 'Créer un signalement pour un bien', icon: 'alert-circle-outline', href: '/bailleur/signalements' },
   { title: 'Mes paiements', subtitle: 'Consulter les loyers et paiements reçus', icon: 'card-outline', href: '/bailleur/paiements' },
-  { title: 'Mes locataires', subtitle: 'Consulter vos locataires', icon: 'people-outline', href: '/bailleur/locataires' },
-  { title: 'Mes signalements', subtitle: 'Consulter vos signalements et les signalements reçus', icon: 'alert-circle-outline', href: '/bailleur/signalements' },
 ];
 
 export default function NotificationsScreen() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [items, setItems] = useState(sections);
-  const [selected, setSelected] = useState<NotificationItem | null>(null);
+  const [selected, setSelected] = useState<AppNotification | null>(null);
+  const [, forceRefresh] = useState(0);
 
-  const unreadCount = items.reduce(
-    (total, section) => total + section.data.filter((n) => n.unread).length,
-    0,
-  );
+  useEffect(() => {
+    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
+    return unsubscribe;
+  }, []);
 
-  const markAllAsRead = () => {
-    setItems((prev) => prev.map((section) => ({ ...section, data: section.data.map((n) => ({ ...n, unread: false })) })));
-  };
+  const items = getNotificationsForRecipient('bailleur-1');
+  const unreadCount = items.filter((item) => !item.read).length;
 
-  const openDetail = (item: NotificationItem) => {
+  const sections = useMemo(() => {
+    const today = items.filter((item) => isToday(item.date));
+    const earlier = items.filter((item) => !isToday(item.date));
+    return [
+      { label: "Aujourd'hui", data: today },
+      { label: 'Plus tot', data: earlier },
+    ];
+  }, [items]);
+
+  const markAllAsRead = () => markAllNotificationsRead('bailleur-1');
+
+  const openDetail = (item: AppNotification) => {
     setSelected(item);
-    if (item.unread) {
-      setItems((prev) =>
-        prev.map((section) => ({
-          ...section,
-          data: section.data.map((n) => (n.id === item.id ? { ...n, unread: false } : n)),
-        })),
-      );
-    }
+    if (!item.read) markNotificationRead(item.id);
   };
 
-  const hasNotifications = items.some((section) => section.data.length > 0);
+  const hasNotifications = items.length > 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -229,7 +128,7 @@ export default function NotificationsScreen() {
           </View>
 
           {hasNotifications ? (
-            items.map((section) =>
+            sections.map((section) =>
               section.data.length === 0 ? null : (
                 <View key={section.label} style={styles.section}>
                   <Text style={styles.sectionTitle}>{section.label}</Text>
@@ -243,19 +142,16 @@ export default function NotificationsScreen() {
                           </View>
                           <View style={styles.notifTextWrap}>
                             <View style={styles.notifTitleRow}>
-                              <Text
-                                style={[styles.notifTitle, item.unread && styles.notifTitleUnread]}
-                                numberOfLines={1}
-                              >
+                              <Text style={[styles.notifTitle, !item.read && styles.notifTitleUnread]} numberOfLines={1}>
                                 {item.title}
                               </Text>
-                              <Text style={styles.notifTime}>{item.time}</Text>
+                              <Text style={styles.notifTime}>{new Date(item.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</Text>
                             </View>
                             <Text style={styles.notifSubtitle} numberOfLines={2}>
                               {item.subtitle}
                             </Text>
                           </View>
-                          {item.unread && <View style={styles.notifDot} />}
+                          {!item.read && <View style={styles.notifDot} />}
                           <Ionicons name="chevron-forward" size={18} color={KleaColors.textMuted} style={styles.notifChevron} />
                         </Pressable>
                       </KleaCard>
@@ -271,11 +167,8 @@ export default function NotificationsScreen() {
               </View>
               <Text style={styles.emptyTitle}>Aucune notification</Text>
               <Text style={styles.emptyText}>
-                Vous serez averti ici dès qu'un paiement, un message ou un signalement arrive.
+                Vous serez averti ici dès qu'un paiement, un message ou une signature de contrat arrive.
               </Text>
-              <Pressable style={styles.emptyButton}>
-                <Text style={styles.emptyButtonText}>Explorer</Text>
-              </Pressable>
             </View>
           )}
         </ScrollView>
@@ -303,7 +196,7 @@ export default function NotificationsScreen() {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Plus</Text>
 
-              <Link href="/bailleur/signalements" asChild>
+              <Link href="/bailleur/sinistres" asChild>
                 <Pressable style={styles.modalItem} onPress={() => setMenuOpen(false)}>
                   <Ionicons name="alert-circle-outline" size={20} color={KleaColors.primary} />
                   <Text style={styles.modalItemText}>Signalement</Text>
@@ -330,30 +223,15 @@ export default function NotificationsScreen() {
           </View>
         </Modal>
 
-        <Modal
-          visible={selected !== null}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setSelected(null)}
-        >
+        <Modal visible={selected !== null} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
           <View style={styles.modalOverlay}>
             <View style={styles.detailSheet}>
               {selected && (
                 <>
                   <View style={styles.detailHandle} />
                   <View style={styles.detailHeader}>
-                    <View
-                      style={[
-                        styles.iconCircle,
-                        styles.detailIconCircle,
-                        { backgroundColor: typeMeta[selected.type].bg },
-                      ]}
-                    >
-                      <Ionicons
-                        name={typeMeta[selected.type].icon}
-                        size={24}
-                        color={typeMeta[selected.type].color}
-                      />
+                    <View style={[styles.iconCircle, styles.detailIconCircle, { backgroundColor: typeMeta[selected.type].bg }]}>
+                      <Ionicons name={typeMeta[selected.type].icon} size={24} color={typeMeta[selected.type].color} />
                     </View>
                     <Pressable onPress={() => setSelected(null)} hitSlop={10} style={styles.detailCloseBtn}>
                       <Ionicons name="close" size={22} color={KleaColors.textMuted} />
@@ -363,33 +241,26 @@ export default function NotificationsScreen() {
                   <ScrollView showsVerticalScrollIndicator={false} style={styles.detailScroll}>
                     <Text style={styles.detailTitle}>{selected.title}</Text>
                     <Text style={styles.detailDate}>
-                      {selected.date} · {selected.time}
+                      {new Date(selected.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                      {' · '}
+                      {new Date(selected.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                     </Text>
 
-                    <Text style={styles.detailBody}>{selected.detail}</Text>
-
-                    {selected.meta && selected.meta.length > 0 && (
-                      <View style={styles.metaCard}>
-                        {selected.meta.map((row, index) => (
-                          <View
-                            key={row.label}
-                            style={[
-                              styles.metaRow,
-                              index === selected.meta!.length - 1 && styles.metaRowLast,
-                            ]}
-                          >
-                            <Text style={styles.metaLabel}>{row.label}</Text>
-                            <Text style={styles.metaValue}>{row.value}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
+                    <Text style={styles.detailBody}>{selected.subtitle}</Text>
                   </ScrollView>
 
                   {selected.actionHref && (
                     <Link href={selected.actionHref as any} asChild>
                       <Pressable style={styles.detailActionButton} onPress={() => setSelected(null)}>
-                        <Text style={styles.detailActionText}>{selected.actionLabel}</Text>
+                        <Text style={styles.detailActionText}>{typeMeta[selected.type].actionLabel}</Text>
+                      </Pressable>
+                    </Link>
+                  )}
+
+                  {selected.bienId && (
+                    <Link href={`/bailleur/detail/${selected.bienId}` as any} asChild>
+                      <Pressable style={styles.detailSecondaryButton} onPress={() => setSelected(null)}>
+                        <Text style={styles.detailSecondaryText}>Voir les details du bien</Text>
                       </Pressable>
                     </Link>
                   )}
@@ -416,7 +287,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 140,
   },
-
   headerBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -439,10 +309,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
     padding: 4,
   },
-  profileIcon: {
-    marginLeft: 14,
-  },
-
   subHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -474,7 +340,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: KleaColors.secondary,
   },
-
   section: {
     marginBottom: 22,
   },
@@ -485,7 +350,6 @@ const styles = StyleSheet.create({
     color: KleaColors.textMuted,
     marginBottom: 12,
   },
-
   notifCard: {
     backgroundColor: KleaColors.surface,
     borderWidth: 1,
@@ -550,7 +414,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     flexShrink: 0,
   },
-
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -581,18 +444,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  emptyButton: {
-    backgroundColor: KleaColors.secondary,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  emptyButtonText: {
-    color: KleaColors.primary,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-
   bottomBar: {
     position: 'absolute',
     left: 0,
@@ -610,7 +461,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '16.6667%',
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -651,7 +501,6 @@ const styles = StyleSheet.create({
     color: KleaColors.secondary,
     fontWeight: '700',
   },
-
   detailSheet: {
     backgroundColor: KleaColors.surface,
     borderTopLeftRadius: 24,
@@ -711,37 +560,6 @@ const styles = StyleSheet.create({
     color: KleaColors.primary,
     marginBottom: 20,
   },
-  metaCard: {
-    backgroundColor: KleaColors.background,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: KleaColors.border,
-    paddingHorizontal: 14,
-    marginBottom: 12,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: KleaColors.border,
-  },
-  metaRowLast: {
-    borderBottomWidth: 0,
-  },
-  metaLabel: {
-    fontSize: 13,
-    color: KleaColors.textMuted,
-  },
-  metaValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: KleaColors.primary,
-    flexShrink: 1,
-    textAlign: 'right',
-  },
   detailActionButton: {
     backgroundColor: KleaColors.secondary,
     borderRadius: 14,
@@ -750,6 +568,20 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   detailActionText: {
+    color: KleaColors.primary,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  detailSecondaryButton: {
+    backgroundColor: KleaColors.surface,
+    borderWidth: 1.5,
+    borderColor: KleaColors.border,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  detailSecondaryText: {
     color: KleaColors.primary,
     fontWeight: '700',
     fontSize: 15,

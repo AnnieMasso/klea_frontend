@@ -1,3 +1,4 @@
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Image, Modal, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
@@ -5,10 +6,21 @@ import { Alert, Image, Modal, Pressable, StyleSheet, Text, View, type ImageSourc
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
+import { KleaImageCarousel } from '@/components/ui/klea-image-carousel';
 import { ReauthGate } from '@/components/ui/reauth-gate';
-import { KleaColors } from '@/constants/theme';
+import { KleaColors, KleaRadius } from '@/constants/theme';
 import { useReauthConfirm } from '@/hooks/use-reauth-confirm';
-import { confirmDepart, getBienById, getContratStatutAffichage, subscribeBiens, type BienDetail } from '@/utils/biens-store';
+import {
+    addBienImage,
+    confirmDepart,
+    getBienById,
+    getContratStatutAffichage,
+    removeBienImage,
+    subscribeBiens,
+    updateBienImage,
+    type BienDetail,
+} from '@/utils/biens-store';
+import { resolveImageSource } from '@/utils/local-photos';
 
 const sinistreAssets: Record<string, ImageSourcePropType> = {
   'maison.jpg': require('../../../assets/images/maison.jpg'),
@@ -20,6 +32,8 @@ function getSinistreAsset(photoKey?: string): ImageSourcePropType | null {
   if (!photoKey) return null;
   return sinistreAssets[photoKey] ?? null;
 }
+
+const MAX_BIEN_IMAGES = 3;
 
 export default function BienDetailScreen() {
   const router = useRouter();
@@ -60,6 +74,44 @@ export default function BienDetailScreen() {
     if (ok) Alert.alert('Depart confirme', 'Le depart preavis a ete confirme.');
   };
 
+  const pickPhoto = async (): Promise<string | null> => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission requise', "Veuillez autoriser l'acces a vos photos.");
+      return null;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return null;
+    return result.assets[0].uri;
+  };
+
+  const handleAddImage = async () => {
+    if (bien.images.length >= MAX_BIEN_IMAGES) {
+      Alert.alert('Limite atteinte', `Vous ne pouvez pas ajouter plus de ${MAX_BIEN_IMAGES} images pour ce bien.`);
+      return;
+    }
+
+    const uri = await pickPhoto();
+    if (!uri) return;
+
+    const ok = addBienImage(bien.id, uri);
+    if (!ok) {
+      Alert.alert('Limite atteinte', `Vous ne pouvez pas ajouter plus de ${MAX_BIEN_IMAGES} images pour ce bien.`);
+    }
+  };
+
+  const handleReplaceImage = async (imageId: string) => {
+    const uri = await pickPhoto();
+    if (uri) updateBienImage(bien.id, imageId, uri);
+  };
+
+  const handleRemoveImage = (imageId: string) => {
+    removeBienImage(bien.id, imageId);
+  };
+
   return (
     <ReauthGate reason="consulter les details de ce bien, ses locataires et ses paiements">
     <BailleurScreenShell title="Detail du bien" subtitle={bien.titre}>
@@ -73,6 +125,28 @@ export default function BienDetailScreen() {
               {previewImage ? <Image source={previewImage} style={styles.modalImage} resizeMode="contain" /> : null}
             </View>
           </Modal>
+
+          <KleaCard style={styles.card}>
+            <Text style={styles.sectionTitle}>Photos du bien</Text>
+            {bien.images.length > 0 ? <KleaImageCarousel images={bien.images} /> : null}
+            <Text style={styles.restrictedText}>Images: {bien.images.length}/{MAX_BIEN_IMAGES}</Text>
+            {bien.images.length === 0 ? <Text style={styles.emptyText}>Aucune photo ajoutee.</Text> : null}
+            {bien.images.map((image) => (
+              <View key={image.id} style={styles.photoManageRow}>
+                <Image source={resolveImageSource(image.url)} style={styles.photoManageThumb} resizeMode="cover" />
+                <View style={styles.photoManageActions}>
+                  <KleaButton title="Remplacer" variant="secondary" onPress={() => handleReplaceImage(image.id)} style={styles.photoManageButton} />
+                  <KleaButton title="Supprimer" variant="ghost" onPress={() => handleRemoveImage(image.id)} style={styles.photoManageButton} />
+                </View>
+              </View>
+            ))}
+            <KleaButton
+              title={bien.images.length >= MAX_BIEN_IMAGES ? 'Maximum 3 images atteint' : 'Ajouter une photo'}
+              onPress={handleAddImage}
+              style={styles.inlineActionButton}
+              disabled={bien.images.length >= MAX_BIEN_IMAGES}
+            />
+          </KleaCard>
 
           <KleaCard style={styles.card}>
             <Text style={styles.sectionTitle}>Informations du bien</Text>
@@ -95,6 +169,12 @@ export default function BienDetailScreen() {
                   title="Voir son assurance habitation"
                   variant="secondary"
                   onPress={() => router.push(`/bailleur/assurance/${bien.locataireActuel?.id}?bienId=${bien.id}` as any)}
+                  style={styles.inlineActionButton}
+                />
+                <KleaButton
+                  title="Voir la CNI"
+                  variant="secondary"
+                  onPress={() => router.push(`/bailleur/cni/${bien.locataireActuel?.id}?bienId=${bien.id}` as any)}
                   style={styles.inlineActionButton}
                 />
               </View>
@@ -369,5 +449,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginTop: 8,
+  },
+  photoManageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  photoManageThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: KleaRadius.md,
+  },
+  photoManageActions: {
+    flex: 1,
+    gap: 6,
+  },
+  photoManageButton: {
+    paddingVertical: 8,
   },
 });
