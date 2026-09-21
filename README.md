@@ -16,6 +16,29 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npx expo start
    ```
 
+
+   Laravel must be reachable from the phone. On Windows, do not keep the backend bound only to `localhost`.
+
+   Start Laravel like this from `Klea_Backend`:
+
+   ```bash
+   php artisan serve --host=0.0.0.0 --port=8000
+   ```
+
+   Then:
+
+   - Put the phone and the PC on the same Wi-Fi.
+   - Put your PC LAN IP in `EXPO_PUBLIC_API_URL`, for example `http://192.168.1.25:8000/api`.
+   - Allow PHP/Laravel through Windows Firewall if prompted.
+   - Restart Expo with cache reset: `npx expo start -c`.
+
+   If login or register spins forever, the usual cause is one of these:
+
+   - `EXPO_PUBLIC_API_URL` still points to `127.0.0.1` or `localhost`
+   - Laravel is not started with `--host=0.0.0.0`
+   - phone and PC are not on the same network
+   - firewall blocks port `8000`
+
 In the output, you'll find options to open the app in a
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)
