@@ -1,16 +1,27 @@
 import { Alert } from 'react-native';
 
-import { CURRENT_LOCATAIRE_ID, isLocataireBanni, isLocataireVerified } from '@/utils/biens-store';
+import { getLocataireAuthUser } from '@/utils/locataire-api';
 
-export function ensureLocataireVerifie(): boolean {
-  if (isLocataireBanni(CURRENT_LOCATAIRE_ID)) {
-    Alert.alert('Compte suspendu', "Votre compte a ete suspendu par l'administrateur.");
+export async function ensureLocataireVerifie(): Promise<boolean> {
+  try {
+    const user = await getLocataireAuthUser();
+
+    if (user.role !== 'locataire') {
+      Alert.alert('Accès refusé', 'Cette action est réservée aux locataires.');
+      return false;
+    }
+
+    if (user.statut === 'actif') {
+      return true;
+    }
+
+    Alert.alert(
+      'Compte en attente de validation',
+      "Votre compte doit d'abord être vérifié par l'administrateur avant d'effectuer cette action.",
+    );
+    return false;
+  } catch (error) {
+    Alert.alert('Erreur', error instanceof Error ? error.message : 'Vérification impossible.');
     return false;
   }
-  if (isLocataireVerified(CURRENT_LOCATAIRE_ID)) return true;
-  Alert.alert(
-    'Compte en attente de validation',
-    "Votre compte doit d'abord etre verifie par l'administrateur avant d'effectuer cette action.",
-  );
-  return false;
 }
