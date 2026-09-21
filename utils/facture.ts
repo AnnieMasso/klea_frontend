@@ -2,9 +2,7 @@ import * as Print from 'expo-print';
 import { Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
 
-import type { PaiementLigne } from '@/utils/biens-store';
-
-const BAILLEUR_NOM = 'Bailleur principal';
+import type { FacturePdfData } from '@/utils/locataire-api';
 
 function escapeHtml(value: string) {
   return value
@@ -15,7 +13,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;');
 }
 
-function toFactureHtml(payment: PaiementLigne) {
+function toFactureHtml(payment: FacturePdfData) {
   return `
     <!DOCTYPE html>
     <html>
@@ -36,7 +34,7 @@ function toFactureHtml(payment: PaiementLigne) {
         <p class="muted">Reference: ${escapeHtml(payment.id)}</p>
         <div class="block">
           <p><strong>Locataire:</strong> ${escapeHtml(payment.locataire)}</p>
-          <p><strong>Bailleur:</strong> ${escapeHtml(BAILLEUR_NOM)}</p>
+          <p><strong>Bailleur:</strong> ${escapeHtml(payment.bailleur ?? 'Bailleur principal')}</p>
           <p><strong>Montant paye:</strong> ${payment.montant.toLocaleString('fr-FR')} FCFA</p>
           <p><strong>Date de paiement:</strong> ${escapeHtml(new Date(payment.datePaiement).toLocaleDateString('fr-FR'))}</p>
           <p><strong>Nombre de mois payes:</strong> ${escapeHtml(String(payment.dureeMois))}</p>
@@ -46,18 +44,29 @@ function toFactureHtml(payment: PaiementLigne) {
   `;
 }
 
-export async function downloadFacture(payment: PaiementLigne) {
+export async function downloadFacture(payment: FacturePdfData) {
   const html = toFactureHtml(payment);
 
   if (Platform.OS === 'web') {
-    // expo-print ignore le html fourni sur le web et imprime la page courante ;
-    // on isole donc la facture dans une fenetre dediee avant de lancer l'impression/enregistrement en PDF.
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.srcdoc = html;
+    iframe.onload = () => {
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          iframe.remove();
+        }, 1000);
+      }, 100);
+    };
+    document.body.appendChild(iframe);
     return;
   }
 

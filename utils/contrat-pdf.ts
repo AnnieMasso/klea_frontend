@@ -2,7 +2,7 @@ import * as Print from 'expo-print';
 import { Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
 
-import type { ContratSpecifique } from '@/utils/biens-store';
+import type { ContratPdfData } from '@/utils/locataire-api';
 
 function escapeHtml(value: string) {
   return value
@@ -13,7 +13,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;');
 }
 
-function toPdfHtml(contrat: ContratSpecifique) {
+function toPdfHtml(contrat: ContratPdfData) {
   const conditions =
     contrat.conditions.length === 0
       ? '<li>Aucune condition specifique.</li>'
@@ -71,30 +71,52 @@ function toPdfHtml(contrat: ContratSpecifique) {
   `;
 }
 
-export async function downloadContrat(contrat: ContratSpecifique) {
+export async function downloadContrat(contrat: ContratPdfData) {
   const html = toPdfHtml(contrat);
 
   if (Platform.OS === 'web') {
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(html);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-    }
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.srcdoc = html;
+    iframe.onload = () => {
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          iframe.remove();
+        }, 1000);
+      }, 100);
+    };
+    document.body.appendChild(iframe);
     return;
   }
 
-  const result = await Print.printToFileAsync({ html });
-  const sharingAvailable = await Sharing.isAvailableAsync();
+  try {
+    const result = await Print.printToFileAsync({ html });
+    const sharingAvailable = await Sharing.isAvailableAsync();
 
-  if (sharingAvailable) {
-    await Sharing.shareAsync(result.uri, {
-      UTI: '.pdf',
-      mimeType: 'application/pdf',
-      dialogTitle: 'Contrat de bail (PDF)',
-    });
-  } else {
+    if (sharingAvailable) {
+      await Sharing.shareAsync(result.uri, {
+        ...(Platform.OS === 'ios' ? { UTI: '.pdf' } : {}),
+        mimeType: 'application/pdf',
+        dialogTitle: 'Contrat de bail (PDF)',
+      });
+      return;
+    }
+  } catch {
+    // Fall back to native print dialog below.
+  }
+
+  try {
     await Print.printAsync({ html });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Generation PDF impossible.';
+    throw new Error(`Telechargement du contrat impossible: ${message}`);
   }
 }
