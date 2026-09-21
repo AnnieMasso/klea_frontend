@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaHeader } from '@/components/ui/klea-header';
 import { KleaColors, KleaRadius } from '@/constants/theme';
+import { getLocataireAuthUser } from '@/utils/locataire-api';
+import { buildUserDashboardPath } from '@/utils/user-route';
 
 type BottomAction = {
   title: string;
@@ -31,6 +33,24 @@ type Props = {
 
 export function LocataireScreenShell({ title, subtitle, children, contentStyle, scrollEnabled = true }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState('/locataire');
+
+  useEffect(() => {
+    let mounted = true;
+
+    getLocataireAuthUser()
+      .then((user) => {
+        if (!mounted) return;
+        setDashboardHref(buildUserDashboardPath(user));
+      })
+      .catch(() => {
+        if (mounted) setDashboardHref('/locataire');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const header = (
     <KleaHeader
@@ -70,7 +90,7 @@ export function LocataireScreenShell({ title, subtitle, children, contentStyle, 
 
         <View style={styles.bottomBar}>
           {bottomActions.map((action) => (
-            <Link key={action.title} href={action.href as any} asChild>
+            <Link key={action.title} href={(action.title === 'Bord' ? dashboardHref : action.href) as any} asChild>
               <Pressable style={styles.bottomAction}>
                 <Ionicons name={action.icon} size={22} color={KleaColors.primary} />
               </Pressable>

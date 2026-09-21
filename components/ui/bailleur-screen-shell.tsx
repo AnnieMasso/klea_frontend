@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaHeader } from '@/components/ui/klea-header';
 import { KleaColors, KleaRadius } from '@/constants/theme';
+import { getAuthenticatedUser } from '@/utils/bailleur-api';
+import { buildUserDashboardPath } from '@/utils/user-route';
 
 type BottomAction = {
   title: string;
@@ -32,6 +34,24 @@ type Props = {
 
 export function BailleurScreenShell({ title, subtitle, children, contentStyle, scrollEnabled = true }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState('/bailleur');
+
+  useEffect(() => {
+    let mounted = true;
+
+    getAuthenticatedUser()
+      .then((user) => {
+        if (!mounted) return;
+        setDashboardHref(buildUserDashboardPath(user));
+      })
+      .catch(() => {
+        if (mounted) setDashboardHref('/bailleur');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -96,7 +116,7 @@ export function BailleurScreenShell({ title, subtitle, children, contentStyle, s
 
         <View style={styles.bottomBar}>
           {bottomActions.map((action) => (
-            <Link key={action.title} href={action.href as any} asChild>
+            <Link key={action.title} href={(action.title === 'Bord' ? dashboardHref : action.href) as any} asChild>
               <Pressable style={styles.bottomAction}>
                 <Ionicons name={action.icon} size={22} color={KleaColors.primary} />
               </Pressable>

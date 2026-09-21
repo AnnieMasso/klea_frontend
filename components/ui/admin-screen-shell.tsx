@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaHeader } from '@/components/ui/klea-header';
 import { KleaColors } from '@/constants/theme';
+import { getAdminMe } from '@/utils/admin-api';
+import { buildUserDashboardPath } from '@/utils/user-route';
 
 type BottomAction = {
   title: string;
@@ -29,6 +31,25 @@ type Props = {
 };
 
 export function AdminScreenShell({ title, subtitle, children, contentStyle }: Props) {
+  const [dashboardHref, setDashboardHref] = useState('/administrateur');
+
+  useEffect(() => {
+    let mounted = true;
+
+    getAdminMe()
+      .then((user) => {
+        if (!mounted) return;
+        setDashboardHref(buildUserDashboardPath(user));
+      })
+      .catch(() => {
+        if (mounted) setDashboardHref('/administrateur');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.container}>
@@ -39,7 +60,7 @@ export function AdminScreenShell({ title, subtitle, children, contentStyle }: Pr
 
         <View style={styles.bottomBar}>
           {bottomActions.map((action) => (
-            <Link key={action.title} href={action.href as any} asChild>
+            <Link key={action.title} href={(action.title === 'Bord' ? dashboardHref : action.href) as any} asChild>
               <Pressable style={styles.bottomAction}>
                 <Ionicons name={action.icon} size={22} color={KleaColors.primary} />
               </Pressable>

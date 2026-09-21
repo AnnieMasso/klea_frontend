@@ -1,4 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import { useRouter } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
 
@@ -10,15 +10,23 @@ type Props = {
   children: ReactNode;
 };
 
+const REAUTH_CACHE_MS = 15 * 60 * 1000;
+
+let lastSuccessfulReauthAt = 0;
+
+function hasRecentReauth() {
+  return Date.now() - lastSuccessfulReauthAt < REAUTH_CACHE_MS;
+}
+
 export function ReauthGate({ reason, children }: Props) {
   const router = useRouter();
-  const [verified, setVerified] = useState(false);
+  const [verified, setVerified] = useState(hasRecentReauth());
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      setVerified(false);
+      setVerified(hasRecentReauth());
       setError('');
       setChecking(false);
     }, []),
@@ -39,6 +47,7 @@ export function ReauthGate({ reason, children }: Props) {
     const result = await confirmIdentity(password);
     setChecking(false);
     if (result.success) {
+      lastSuccessfulReauthAt = Date.now();
       setVerified(true);
     } else {
       setError(result.message ?? 'Mot de passe incorrect.');
