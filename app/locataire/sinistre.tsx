@@ -10,53 +10,47 @@ import { KleaInput } from '@/components/ui/klea-input';
 import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors, KleaRadius } from '@/constants/theme';
 import {
-  CURRENT_LOCATAIRE_ID,
-  addSinistre,
-  getBienById,
-  getContratsForLocataire,
-  subscribeBiens,
-  type BienDetail,
-} from '@/utils/biens-store';
+  createLocataireSinistre,
+  getLocataireContrats,
+  getLocataireSinistres,
+  type LocataireContrat,
+  type LocataireSinistre,
+} from '@/utils/locataire-api';
 import { resolveImageSource } from '@/utils/local-photos';
 import { ensureLocataireVerifie } from '@/hooks/use-locataire-guard';
 
 export default function LocataireSinistreScreen() {
-  const [refreshTick, forceRefresh] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [selectedContratId, setSelectedContratId] = useState('');
   const [description, setDescription] = useState('');
   const [photo1, setPhoto1] = useState('');
   const [photo2, setPhoto2] = useState('');
+  const [contratsSignes, setContratsSignes] = useState<LocataireContrat[]>([]);
+  const [sinistresDeclares, setSinistresDeclares] = useState<LocataireSinistre[]>([]);
+
+  const refresh = async () => {
+    try {
+      setLoading(true);
+      const [contratsData, sinistresData] = await Promise.all([
+        getLocataireContrats(),
+        getLocataireSinistres(),
+      ]);
+      setContratsSignes(contratsData.filter((contract) => contract.etat === 'signe'));
+      setSinistresDeclares(sinistresData.sort((a, b) => Date.parse(b.dateSinistre) - Date.parse(a.dateSinistre)));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    refresh();
   }, []);
-
-  const contratsSignes = useMemo(
-    () => getContratsForLocataire(CURRENT_LOCATAIRE_ID).filter((contract) => contract.etat === 'signe'),
-    [refreshTick],
-  );
 
   useEffect(() => {
     if (!selectedContratId && contratsSignes[0]) setSelectedContratId(contratsSignes[0].id);
   }, [contratsSignes, selectedContratId]);
 
   const contratSelectionne = contratsSignes.find((contract) => contract.id === selectedContratId) ?? null;
-
-  const biensAvecContratSigne = useMemo(() => {
-    const uniqueBienIds = Array.from(new Set(contratsSignes.map((contract) => contract.bienId)));
-    return uniqueBienIds
-      .map((id) => getBienById(id))
-      .filter((bien): bien is BienDetail => Boolean(bien));
-  }, [contratsSignes, refreshTick]);
-
-  const sinistresDeclares = useMemo(
-    () =>
-      biensAvecContratSigne
-        .flatMap((bien) => bien.sinistres.map((sinistre) => ({ ...sinistre, bienId: bien.id, bienTitre: bien.titre })))
-        .sort((a, b) => Date.parse(b.dateSinistre) - Date.parse(a.dateSinistre)),
-    [biensAvecContratSigne],
-  );
 
   const pickPhoto = async (setter: (uri: string) => void) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -73,9 +67,9 @@ export default function LocataireSinistreScreen() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!contratSelectionne) return;
-    if (!ensureLocataireVerifie()) return;
+    if (!(await ensureLocataireVerifie())) return;
     if (!description.trim()) {
       Alert.alert( 'Veuillez decrire le sinistre.');
       return;
@@ -84,22 +78,28 @@ export default function LocataireSinistreScreen() {
       Alert.alert('Photo requise', 'Veuillez ajouter au moins une photo du sinistre.');
       return;
     }
-    const ok = addSinistre(contratSelectionne.bienId, contratSelectionne.id, {
+    await createLocataireSinistre({
+      contratId: contratSelectionne.id,
+      dateSinistre: new Date().toISOString().slice(0, 10),
       description: description.trim(),
-      photoSinistre1: photo1,
-      photoSinistre2: photo2 || undefined,
+      photo1Uri: photo1,
+      photo2Uri: photo2 || undefined,
     });
-    if (ok) {
-      Alert.alert('Sinistre déclaré', 'Votre déclaration a ete envoyée au bailleur.');
-      setDescription('');
-      setPhoto1('');
-      setPhoto2('');
-    }
+
+    Alert.alert('Sinistre déclaré', 'Votre déclaration a ete envoyée au bailleur.');
+    setDescription('');
+    setPhoto1('');
+    setPhoto2('');
+    await refresh();
   };
 
   return (
     <LocataireScreenShell title="Declarer un sinistre" subtitle="">
-      {contratsSignes.length === 0 ? (
+      {loading ? (
+        <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+      ) : null}
+
+      {!loading && contratsSignes.length === 0 ? (
         <KleaCard><Text style={styles.emptyText}>Vous devez avoir signe un contrat pour declarer un sinistre.</Text></KleaCard>
       ) : (
         <KleaCard style={styles.card}>

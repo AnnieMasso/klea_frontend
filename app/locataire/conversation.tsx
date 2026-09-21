@@ -10,14 +10,12 @@ import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors } from '@/constants/theme';
 import { ensureLocataireVerifie } from '@/hooks/use-locataire-guard';
 import {
-    CURRENT_LOCATAIRE_ID,
-    getContratById,
-    getConversationsForParticipant,
-    sendMessageToConversation,
-    signContrat,
-    subscribeBiens,
-    type ConversationLigne,
-} from '@/utils/biens-store';
+  getLocataireAuthUser,
+    getLocataireConversations,
+    sendLocataireMessage,
+    signLocataireContrat,
+    type LocataireConversation,
+} from '@/utils/locataire-api';
 
 const profileImageSource = require('../../assets/images/icon.png');
 
@@ -37,44 +35,86 @@ export default function LocataireConversationScreen() {
   const params = useLocalSearchParams<{ conversationId?: string }>();
   const requestedConversationId = typeof params.conversationId === 'string' ? params.conversationId : '';
 
-  const [conversations, setConversations] = useState<ConversationLigne[]>(() =>
-    getConversationsForParticipant(CURRENT_LOCATAIRE_ID),
-  );
+  const [conversations, setConversations] = useState<LocataireConversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState(requestedConversationId);
   const [draft, setDraft] = useState('');
+  const [myDisplayName, setMyDisplayName] = useState('Locataire');
 
-  const refresh = () => setConversations(getConversationsForParticipant(CURRENT_LOCATAIRE_ID));
+  const refresh = () => {
+    setLoading(true);
+    return getLocataireConversations()
+      .then((items) => setConversations(items))
+      .catch((error) => Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.'))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     refresh();
-    const unsubscribe = subscribeBiens(refresh);
-    return unsubscribe;
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    getLocataireAuthUser()
+      .then((user) => {
+        if (cancelled) return;
+        const fullName = [user.prenom ?? '', user.nom ?? ''].map((part) => part.trim()).filter(Boolean).join(' ');
+        setMyDisplayName(fullName || user.email || 'Locataire');
+      })
+      .catch(() => {
+        if (!cancelled) setMyDisplayName('Locataire');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
     if (selectedConversationId && !conversations.some((item) => item.id === selectedConversationId)) {
       setSelectedConversationId('');
     }
-  }, [conversations, selectedConversationId]);
+  }, [loading, conversations, selectedConversationId]);
 
   useEffect(() => {
-    if (!requestedConversationId) return;
-    setSelectedConversationId(requestedConversationId);
-  }, [requestedConversationId]);
+    if (loading || !requestedConversationId) return;
+    if (conversations.some((item) => item.id === requestedConversationId)) {
+      setSelectedConversationId(requestedConversationId);
+    }
+  }, [loading, requestedConversationId, conversations]);
 
   const selectedConversation = conversations.find((item) => item.id === selectedConversationId) ?? null;
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!selectedConversation) return;
-    const ok = sendMessageToConversation(selectedConversation.id, draft, CURRENT_LOCATAIRE_ID);
-    if (!ok) return;
-    setDraft('');
+    const message = draft.trim();
+    if (!message || sending) return;
+
+    setSending(true);
+    try {
+      await sendLocataireMessage(selectedConversation.id, message);
+      setDraft('');
+      await refresh();
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Envoi impossible.');
+    } finally {
+      setSending(false);
+    }
   };
 
-  const handleSignerContrat = (contratId: string, bienId: string) => {
-    if (!ensureLocataireVerifie()) return;
-    const ok = signContrat(bienId, contratId);
-    if (ok) Alert.alert('Contrat signe', 'Vous avez signe le contrat avec succes.');
+  const handleSignerContrat = async (contratId: string) => {
+    if (!(await ensureLocataireVerifie())) return;
+
+    try {
+      await signLocataireContrat(contratId);
+      Alert.alert('Contrat signe', 'Vous avez signe le contrat avec succes.');
+      await refresh();
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Signature impossible.');
+    }
   };
 
   const handleOpenConversation = (conversationId: string) => {
@@ -86,6 +126,16 @@ export default function LocataireConversationScreen() {
     setSelectedConversationId('');
     setDraft('');
   };
+
+  if (loading && conversations.length === 0) {
+    return (
+      <LocataireScreenShell title="Messagerie" subtitle="">
+        <KleaCard style={styles.card}>
+          <Text style={styles.emptyText}>Chargement des conversations...</Text>
+        </KleaCard>
+      </LocataireScreenShell>
+    );
+  }
 
   if (selectedConversation) {
     return (
@@ -109,46 +159,40 @@ export default function LocataireConversationScreen() {
             </View>
           </View>
 
+          {selectedConversation.contratId ? (
+            <View style={styles.contractPanel}>
+              <KleaButton
+                title="Consulter le contrat"
+                variant="secondary"
+                onPress={() => router.push(`/locataire/contrat?contratId=${selectedConversation.contratId}` as any)}
+                style={styles.contractActionButton}
+              />
+              {selectedConversation.contratEtat === 'en_attente' ? (
+                <KleaButton
+                  title="Signer le contrat"
+                  onPress={() => handleSignerContrat(selectedConversation.contratId!)}
+                  style={styles.contractActionButton}
+                />
+              ) : null}
+              {selectedConversation.contratEtat === 'signe' ? (
+                <KleaButton
+                  title="Effectuer le paiement"
+                  onPress={() => router.push(`/locataire/paiements?contratId=${selectedConversation.contratId}` as any)}
+                  style={styles.contractActionButton}
+                />
+              ) : null}
+            </View>
+          ) : null}
+
           <ScrollView style={styles.messagesScroll} contentContainerStyle={styles.messagesColumn} showsVerticalScrollIndicator>
             {selectedConversation.messages.map((message) => {
               const isMine = message.auteurRole === 'locataire';
-              const contract = message.type === 'contract' && message.contractId ? getContratById(message.contractId, selectedConversation.bienId) : null;
-              const canSigner = Boolean(contract && contract.etat === 'en_attente');
-              const canPayer = Boolean(contract && contract.etat === 'signe');
               return (
                 <View key={message.id} style={[styles.messageRow, isMine ? styles.messageRowMine : styles.messageRowOther]}>
                   <View style={[styles.messageBubble, isMine ? styles.messageBubbleMine : styles.messageBubbleOther]}>
-                    <Text style={styles.messageAuthor}>{message.auteurNom}</Text>
-                    {contract ? (
-                      <View style={styles.contractMessageBody}>
-                        <Text style={styles.messageContent}>{message.contenu}</Text>
-                        <Text style={styles.contractMeta}>Type: {contract.typeContrat === 'indetermine' ? 'Contrat a duree indeterminee' : 'Contrat a duree determinee'}</Text>
-                        <Text style={styles.contractMeta}>Etat: {contract.etat === 'en_attente' ? 'En attente' : contract.etat === 'signe' ? 'Signe' : 'Annule'}</Text>
-                        <Text style={styles.contractMeta}>Loyer: {contract.montant.toLocaleString('fr-FR')} FCFA</Text>
-                        {contract.conditions.length > 0 ? contract.conditions.map((condition, index) => (
-                          <Text key={`${contract.id}-cond-${index}`} style={styles.contractCondition}>• {condition.description}</Text>
-                        )) : null}
-                        {canSigner ? (
-                          <KleaButton
-                            title="Signer le contrat"
-                            onPress={() => handleSignerContrat(contract.id, selectedConversation.bienId)}
-                            style={styles.contractActionButton}
-                          />
-                        ) : null}
-                        {canPayer ? (
-                          <KleaButton
-                            title="Effectuer le paiement"
-                            onPress={() => router.push(`/locataire/paiements?contratId=${contract.id}` as any)}
-                            style={styles.contractActionButton}
-                          />
-                        ) : null}
-                      </View>
-                    ) : (
-                      <>
-                        <Text style={styles.messageContent}>{message.contenu}</Text>
-                        <Text style={styles.messageDate}>{formatMessageDate(message.date)}</Text>
-                      </>
-                    )}
+                    <Text style={styles.messageAuthor}>{isMine ? myDisplayName : message.auteurNom}</Text>
+                    <Text style={styles.messageContent}>{message.contenu}</Text>
+                    <Text style={styles.messageDate}>{formatMessageDate(message.date)}</Text>
                   </View>
                 </View>
               );
@@ -164,7 +208,7 @@ export default function LocataireConversationScreen() {
             numberOfLines={1}
             style={styles.messageInput}
           />
-          <KleaButton title="Envoyer" onPress={handleSendMessage} disabled={!draft.trim()} />
+          <KleaButton title={sending ? 'Envoi...' : 'Envoyer'} onPress={handleSendMessage} disabled={!draft.trim() || sending} />
         </KleaCard>
       </LocataireScreenShell>
     );
@@ -201,24 +245,20 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     flex: 1,
   },
-  contractMessageBody: {
-    gap: 6,
-  },
-  contractMeta: {
-    color: KleaColors.textMuted,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  contractCondition: {
-    color: KleaColors.primary,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  contractActionButton: {
-    marginTop: 6,
-  },
   threadScreenContent: {
     flex: 1,
+  },
+  contractActionButton: {
+    marginTop: 2,
+  },
+  contractPanel: {
+    backgroundColor: '#F6FAF7',
+    borderWidth: 1,
+    borderColor: KleaColors.border,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    gap: 8,
   },
   emptyText: {
     color: KleaColors.textMuted,
@@ -316,15 +356,16 @@ const styles = StyleSheet.create({
   },
   messageRow: {
     width: '100%',
+    flexDirection: 'row',
   },
   messageRowMine: {
-    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
   },
   messageRowOther: {
-    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
   },
   messageBubble: {
-    width: '88%',
+    maxWidth: '88%',
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,

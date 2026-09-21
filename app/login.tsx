@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
     Alert,
@@ -14,11 +15,22 @@ import {
     View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { loginUser } from '../utils/auth-api';
+import { buildUserDashboardPath } from '../utils/user-route';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [form, setForm] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const showFeedback = (title: string, message: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.alert(`${title}\n${message}`);
+      return;
+    }
+    Alert.alert(title, message);
+  };
 
   const updateField = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -42,14 +54,24 @@ export default function LoginScreen() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
+
+    try {
+      const result = await loginUser({
+        email: form.email,
+        motDePasse: form.password,
+      });
+
+      // showFeedback('Connexion réussie', 'Bienvenue dans votre espace Klea.');
+      router.replace(buildUserDashboardPath(result.user) as any);
+    } catch (error) {
+      showFeedback('Erreur', error instanceof Error ? error.message : 'Il s\' produit une erreur lors de la connexion à votre espace.');
+    } finally {
       setIsSubmitting(false);
-      Alert.alert('Connexion réussie', 'Bienvenue dans votre espace Klea.');
-    }, 600);
+    }
   };
 
   return (
@@ -58,7 +80,7 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.headerCard}>
             <Image
-              source={require('../assets/images/klea-logo-horizontal-color.svg')}
+              source={require('../assets/images/klea-icon-app.svg')}
               style={styles.logo}
               contentFit="contain"
             />

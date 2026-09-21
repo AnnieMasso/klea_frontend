@@ -7,7 +7,7 @@ import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { VerificationStatusBadge } from '@/components/ui/verification-status-badge';
 import { KleaColors } from '@/constants/theme';
-import { deleteBailleurAccount, getAllBailleurAccounts, getBailleurDeletionBlockReason, getBiens, setBailleurStatut, subscribeBiens } from '@/utils/biens-store';
+import { AdminBailleurRow, deleteAdminUser, getAdminBailleurs, validateAdminUser } from '@/utils/admin-api';
 
 type StatusFilter = 'tous' | 'verifie' | 'non_verifie';
 type DateSort = 'recent' | 'ancien';
@@ -18,39 +18,54 @@ function formatDate(value: string) {
 
 export default function AdminBailleursScreen() {
   const router = useRouter();
-  const [, forceRefresh] = useState(0);
+  const [rows, setRows] = useState<AdminBailleurRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('tous');
   const [dateSort, setDateSort] = useState<DateSort>('recent');
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    load();
   }, []);
 
-  const bailleurs = getAllBailleurAccounts();
+  const load = async () => {
+    try {
+      setLoading(true);
+      const data = await getAdminBailleurs();
+      setRows(data);
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de charger les bailleurs.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredBailleurs = useMemo(() => {
-    const filtered = bailleurs.filter((bailleur) => {
-      if (statusFilter === 'verifie') return bailleur.statut === 'verifie';
-      if (statusFilter === 'non_verifie') return bailleur.statut !== 'verifie';
+    const filtered = rows.filter(({ bailleur }) => {
+      if (statusFilter === 'verifie') return bailleur.statut === 'actif';
+      if (statusFilter === 'non_verifie') return bailleur.statut !== 'actif';
       return true;
     });
 
     return [...filtered].sort((left, right) => {
-      const leftDate = Date.parse(left.createdAt);
-      const rightDate = Date.parse(right.createdAt);
+      const leftDate = Date.parse(left.bailleur.created_at);
+      const rightDate = Date.parse(right.bailleur.created_at);
       return dateSort === 'recent' ? rightDate - leftDate : leftDate - rightDate;
     });
-  }, [bailleurs, dateSort, statusFilter]);
+  }, [rows, dateSort, statusFilter]);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = (id: number) => {
     Alert.alert('Supprimer ce bailleur ?', 'Cette action est irreversible.', [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
         style: 'destructive',
-        onPress: () => {
-          const result = deleteBailleurAccount(id);
-          if (!result.ok) Alert.alert('Impossible', result.message);
+        onPress: async () => {
+          try {
+            await deleteAdminUser(id);
+            await load();
+          } catch (error) {
+            Alert.alert('Impossible', error instanceof Error ? error.message : 'Suppression refusee.');
+          }
         },
       },
     ]);
@@ -81,19 +96,20 @@ export default function AdminBailleursScreen() {
         </View>
       </KleaCard>
 
-      {filteredBailleurs.length === 0 ? <KleaCard><Text style={styles.emptyText}>Aucun bailleur pour ces filtres.</Text></KleaCard> : null}
+      {loading ? <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard> : null}
+      {!loading && filteredBailleurs.length === 0 ? <KleaCard><Text style={styles.emptyText}>Aucun bailleur pour ces filtres.</Text></KleaCard> : null}
 
-      {filteredBailleurs.map((bailleur) => {
-        const nombreBiens = getBiens().filter((bien) => bien.bailleurId === bailleur.id).length;
-        const isVerified = bailleur.statut === 'verifie';
-        const deleteBlockReason = getBailleurDeletionBlockReason(bailleur.id);
+      {filteredBailleurs.map(({ bailleur, biens, has_ever_had_tenant }) => {
+        const nombreBiens = biens.length;
+        const isVerified = bailleur.statut === 'actif';
+        const deleteBlocked = has_ever_had_tenant;
 
         return (
           <KleaCard key={bailleur.id} style={styles.card}>
-            <Text style={styles.title}>{bailleur.prenom} {bailleur.nom}</Text>
+            <Text style={styles.title}>{bailleur.prenom ?? ''} {bailleur.nom}</Text>
             <Text style={styles.line}>{bailleur.email}</Text>
             <Text style={styles.line}>Biens publies: {nombreBiens}</Text>
-            <Text style={styles.line}>Inscrit le: {formatDate(bailleur.createdAt)}</Text>
+            <Text style={styles.line}>Inscrit le: {formatDate(bailleur.created_at)}</Text>
             <VerificationStatusBadge verified={isVerified} />
 
             <KleaButton
@@ -103,13 +119,24 @@ export default function AdminBailleursScreen() {
               style={styles.actionButton}
             />
             {!isVerified ? (
-              <KleaButton title="Valider" onPress={() => setBailleurStatut(bailleur.id, 'verifie')} style={styles.actionButton} />
+              <KleaButton
+                title="Valider"
+                onPress={async () => {
+                  try {
+                    await validateAdminUser(bailleur.id);
+                    await load();
+                  } catch (error) {
+                    Alert.alert('Erreur', error instanceof Error ? error.message : 'Validation impossible.');
+                  }
+                }}
+                style={styles.actionButton}
+              />
             ) : null}
-            {!isVerified && !deleteBlockReason ? (
+            {!isVerified && !deleteBlocked ? (
               <KleaButton title="Supprimer" variant="ghost" onPress={() => handleDelete(bailleur.id)} style={styles.actionButton} />
             ) : null}
-            {!isVerified && deleteBlockReason ? (
-              <Text style={styles.warningText}>{deleteBlockReason}</Text>
+            {!isVerified && deleteBlocked ? (
+              <Text style={styles.warningText}>Ce bailleur a deja eu au moins un locataire.</Text>
             ) : null}
           </KleaCard>
         );

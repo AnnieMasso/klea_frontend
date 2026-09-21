@@ -1,63 +1,67 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, StyleSheet, Text } from 'react-native';
+import { Alert, Image, StyleSheet, Text, View } from 'react-native';
 
 import { AdminScreenShell } from '@/components/ui/admin-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { VerificationStatusBadge } from '@/components/ui/verification-status-badge';
-import { KleaColors, KleaRadius } from '@/constants/theme';
-import {
-    createAdminConversationForBien,
-    deleteLocataireAccount,
-    getAllLocataireAccounts,
-    getBiens,
-    getLocataireDeletionBlockReason,
-    setLocataireBanni,
-    setLocataireStatut,
-    subscribeBiens,
-} from '@/utils/biens-store';
+import { KleaColors } from '@/constants/theme';
+import { deleteAdminUser, getAdminLocataires, validateAdminUser } from '@/utils/admin-api';
 import { resolveImageSource } from '@/utils/local-photos';
 
 export default function AdminLocataireDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
-  const locataireId = typeof params.id === 'string' ? params.id : '';
-  const [, forceRefresh] = useState(0);
+  const locataireId = Number(typeof params.id === 'string' ? params.id : '0');
 
-  useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
-  }, []);
+  const [row, setRow] = useState<Awaited<ReturnType<typeof getAdminLocataires>>[number] | null>(null);
 
-  const locataire = getAllLocataireAccounts().find((item) => item.id === locataireId) ?? null;
-  const biensLoues = getBiens().filter((item) => item.locataireActuel?.id === locataireId);
-  const deleteBlockReason = locataire ? getLocataireDeletionBlockReason(locataire.id) : 'Locataire introuvable.';
-  const isVerified = locataire?.statut === 'verifie';
-
-  const handleDelete = () => {
-    Alert.alert(
-      'Supprimer ce locataire ?',
-      'Cette action est irreversible.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: () => {
-            const result = deleteLocataireAccount(locataireId);
-            if (!result.ok) {
-              Alert.alert('Impossible', result.message);
-              return;
-            }
-            router.back();
-          },
-        },
-      ],
-    );
+  const showFeedback = (title: string, message: string) => {
+    if (typeof window !== 'undefined') {
+      window.alert(`${title}\n${message}`);
+      return;
+    }
+    Alert.alert(title, message);
   };
 
-  if (!locataire) {
+  const refresh = async () => {
+    try {
+      const list = await getAdminLocataires();
+      setRow(list.find((item) => item.locataire.id === locataireId) ?? null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Impossible de charger ce locataire.';
+      showFeedback('Erreur', message);
+      setRow(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!locataireId) return;
+    void refresh();
+  }, [locataireId]);
+
+  const handleDelete = () => {
+    if (!row) return;
+
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm('Supprimer ce locataire ? Cette action est irreversible.')
+      : true;
+
+    if (!confirmed) return;
+
+    void (async () => {
+      try {
+        await deleteAdminUser(row.locataire.id);
+        showFeedback('Suppression reussie', 'Le locataire a ete supprime.');
+        router.back();
+      } catch (error) {
+        showFeedback('Impossible', error instanceof Error ? error.message : 'Suppression refusee.');
+      }
+    })();
+  };
+
+  if (!row) {
     return (
       <AdminScreenShell title="Locataire" subtitle="Introuvable">
         <KleaCard><Text style={styles.emptyText}>Ce locataire est introuvable.</Text></KleaCard>
@@ -65,91 +69,54 @@ export default function AdminLocataireDetailScreen() {
     );
   }
 
+  const fullName = `${row.locataire.prenom ?? ''} ${row.locataire.nom}`.trim() || row.locataire.email;
+  const isVerified = row.locataire.statut === 'actif';
+
   return (
-    <AdminScreenShell title={`${locataire.prenom} ${locataire.nom}`} subtitle={locataire.email}>
+    <AdminScreenShell title={fullName} subtitle={row.locataire.email}>
       <KleaCard style={styles.card}>
         <Text style={styles.sectionTitle}>Compte</Text>
-        <Text style={styles.line}>{locataire.prenom} {locataire.nom}</Text>
-        <Text style={styles.line}>{locataire.email}</Text>
-        <Text style={styles.line}>Biens loues: {biensLoues.length}</Text>
+        <Text style={styles.line}>{fullName}</Text>
+        <Text style={styles.line}>{row.locataire.email}</Text>
+        <Text style={styles.line}>Bien occupe: {row.occupied_bien?.titre ?? 'Aucun'}</Text>
         <VerificationStatusBadge verified={isVerified} />
-        {locataire.banni ? <Text style={styles.banniLine}>Compte banni</Text> : null}
       </KleaCard>
 
       <KleaCard style={styles.card}>
-        <Text style={styles.sectionTitle}>Biens actuellement loues ({biensLoues.length})</Text>
-        {biensLoues.length === 0 ? <Text style={styles.emptyText}>Ce locataire n'occupe actuellement aucun bien.</Text> : null}
-        {biensLoues.map((bien) => (
-          <KleaCard key={bien.id} style={styles.rentedBienCard}>
-            <Text style={styles.line}>{bien.titre}</Text>
-            <Text style={styles.line}>{bien.type} - {bien.ville ?? '-'}</Text>
-            <KleaButton
-              title="Voir le bien"
-              variant="secondary"
-              onPress={() => router.push(`/administrateur/bien/${bien.id}` as any)}
-              style={styles.actionButton}
-            />
-            <KleaButton
-              title="Converser via ce bien"
-              onPress={() => {
-                const conversationId = createAdminConversationForBien(
-                  bien.id,
-                  locataire.id,
-                  `${locataire.prenom} ${locataire.nom}`,
-                  `Bonjour ${locataire.prenom}, je vous contacte au sujet du bien "${bien.titre}".`,
-                );
-
-                if (!conversationId) {
-                  Alert.alert('Erreur', 'Impossible d\'ouvrir la conversation pour ce bien.');
-                  return;
-                }
-
-                router.push(`/administrateur/conversation?conversationId=${conversationId}` as any);
-              }}
-              style={styles.actionButton}
-            />
-          </KleaCard>
-        ))}
-      </KleaCard>
-
-      <KleaCard style={styles.card}>
-        <Text style={styles.sectionTitle}>CNI recto</Text>
-        {locataire.cniRecto ? (
-          <Image source={resolveImageSource(locataire.cniRecto)} style={styles.cniImage} resizeMode="cover" />
-        ) : (
-          <Text style={styles.emptyText}>Aucune photo renseignee.</Text>
-        )}
-      </KleaCard>
-
-      <KleaCard style={styles.card}>
-        <Text style={styles.sectionTitle}>CNI verso</Text>
-        {locataire.cniVerso ? (
-          <Image source={resolveImageSource(locataire.cniVerso)} style={styles.cniImage} resizeMode="cover" />
-        ) : (
-          <Text style={styles.emptyText}>Aucune photo renseignee.</Text>
-        )}
-      </KleaCard>
-
-      <KleaCard style={styles.card}>
-        <Text style={styles.sectionTitle}>Assurance habitation</Text>
-        {locataire.assuranceHabitation ? (
-          <Image source={resolveImageSource(locataire.assuranceHabitation)} style={styles.cniImage} resizeMode="cover" />
-        ) : (
-          <Text style={styles.emptyText}>Aucune assurance renseignee.</Text>
-        )}
+        <Text style={styles.sectionTitle}>Documents fournis</Text>
+        <View style={styles.docsGrid}>
+          <View style={styles.docItem}>
+            <Text style={styles.docLabel}>CNI recto</Text>
+            {row.locataire.cni_recto ? <Image source={resolveImageSource(row.locataire.cni_recto)} style={styles.docImage} resizeMode="cover" /> : <Text style={styles.docEmpty}>Non fourni</Text>}
+          </View>
+          <View style={styles.docItem}>
+            <Text style={styles.docLabel}>CNI verso</Text>
+            {row.locataire.cni_verso ? <Image source={resolveImageSource(row.locataire.cni_verso)} style={styles.docImage} resizeMode="cover" /> : <Text style={styles.docEmpty}>Non fourni</Text>}
+          </View>
+          <View style={styles.docItem}>
+            <Text style={styles.docLabel}>Assurance habitation</Text>
+            {row.locataire.assurance_habitation ? <Image source={resolveImageSource(row.locataire.assurance_habitation)} style={styles.docImage} resizeMode="cover" /> : <Text style={styles.docEmpty}>Non fourni</Text>}
+          </View>
+        </View>
       </KleaCard>
 
       <KleaCard style={styles.card}>
         {!isVerified ? (
-          <KleaButton title="Valider" onPress={() => setLocataireStatut(locataire.id, 'verifie')} style={styles.actionButton} />
+          <KleaButton
+            title="Valider"
+            onPress={async () => {
+              try {
+                await validateAdminUser(row.locataire.id);
+                await refresh();
+                showFeedback('Validation reussie', 'Le locataire a ete valide.');
+              } catch (error) {
+                showFeedback('Erreur', error instanceof Error ? error.message : 'Validation impossible.');
+              }
+            }}
+            style={styles.actionButton}
+          />
         ) : null}
-        {locataire.banni ? (
-          <KleaButton title="Debannir" variant="secondary" onPress={() => setLocataireBanni(locataire.id, false)} style={styles.actionButton} />
-        ) : (
-          <KleaButton title="Bannir ce locataire" variant="ghost" onPress={() => setLocataireBanni(locataire.id, true)} style={styles.actionButton} />
-        )}
-        {!isVerified && !deleteBlockReason ? <KleaButton title="Supprimer ce locataire" variant="ghost" onPress={handleDelete} style={styles.actionButton} /> : null}
-        {!isVerified && deleteBlockReason ? <Text style={styles.warningText}>{deleteBlockReason}</Text> : null}
+        <KleaButton title="Supprimer ce locataire" variant="ghost" onPress={handleDelete} style={styles.actionButton} />
       </KleaCard>
     </AdminScreenShell>
   );
@@ -170,38 +137,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
-  statusLine: {
-    color: KleaColors.secondary,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  banniLine: {
-    color: '#B23128',
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  cniImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: KleaRadius.md,
-  },
   actionButton: {
-    marginTop: 8,
-  },
-  rentedBienCard: {
-    marginTop: 8,
-    marginBottom: 0,
-  },
-  warningText: {
-    color: KleaColors.error,
-    fontSize: 13,
-    lineHeight: 20,
     marginTop: 8,
   },
   emptyText: {
     color: KleaColors.textMuted,
     fontSize: 13,
+  },
+  docsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  docItem: {
+    width: '31%',
+    minWidth: 120,
+    gap: 6,
+  },
+  docLabel: {
+    color: KleaColors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  docImage: {
+    width: '100%',
+    height: 92,
+    borderRadius: 10,
+    backgroundColor: '#F3EEE6',
+  },
+  docEmpty: {
+    color: KleaColors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingVertical: 6,
   },
 });

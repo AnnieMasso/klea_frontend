@@ -1,15 +1,44 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Slot } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaCard } from '@/components/ui/klea-card';
 import { VerificationStatusBadge } from '@/components/ui/verification-status-badge';
 import { KleaColors } from '@/constants/theme';
-import { CURRENT_BAILLEUR_ID, isBailleurVerified } from '@/utils/biens-store';
+import { getAuthenticatedUser } from '@/utils/bailleur-api';
 
 export default function BailleurLayout() {
-  const verified = isBailleurVerified(CURRENT_BAILLEUR_ID);
+  const [verified, setVerified] = useState(true);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getAuthenticatedUser()
+      .then((user) => {
+        if (!mounted) return;
+        if (user.role === 'bailleur') {
+          setVerified(user.statut === 'actif');
+        }
+      })
+      .catch(() => {
+        if (!mounted) return;
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setChecked(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!checked) {
+    return <Slot />;
+  }
 
   if (!verified) {
     return (
@@ -22,9 +51,12 @@ export default function BailleurLayout() {
             <Text style={styles.title}>Compte bailleur en attente de validation</Text>
             <VerificationStatusBadge verified={false} />
             <Text style={styles.text}>
-              Votre compte est actuellement non verifie. Un administrateur doit le valider avant que vous puissiez utiliser la plateforme bailleur.
+              Votre compte est en attente de validation. Vous pouvez ajouter et consulter vos biens, mais les autres actions restent bloquees jusqu a validation administrateur.
             </Text>
           </KleaCard>
+          <View style={styles.slotWrap}>
+            <Slot />
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -40,8 +72,9 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 20,
+    paddingTop: 12,
   },
   card: {
     alignItems: 'center',
@@ -67,5 +100,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     textAlign: 'center',
+  },
+  slotWrap: {
+    flex: 1,
+    marginTop: 12,
   },
 });

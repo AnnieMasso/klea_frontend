@@ -8,13 +8,15 @@ import { KleaCard } from '@/components/ui/klea-card';
 import { KleaHeader } from '@/components/ui/klea-header';
 import { KleaColors } from '@/constants/theme';
 import {
-    CURRENT_LOCATAIRE_ID,
-    CURRENT_LOCATAIRE_NOM,
-    getAllConversations,
-    getBienForLocataire,
-    getContratsForLocataire,
-    subscribeBiens,
-} from '@/utils/biens-store';
+  getLocataireConversations,
+  getLocataireContrats,
+  getLocatairePaiements,
+  getLocataireVisibleBiens,
+  type LocataireBien,
+  type LocataireContrat,
+  type LocataireConversation,
+  type LocatairePaiement,
+} from '@/utils/locataire-api';
 
 type Action = {
   title: string;
@@ -47,27 +49,47 @@ function monthLabel(key: string) {
 }
 
 export default function LocataireDashboard() {
-  const [refreshTick, forceRefresh] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [biens, setBiens] = useState<LocataireBien[]>([]);
+  const [contrats, setContrats] = useState<LocataireContrat[]>([]);
+  const [conversations, setConversations] = useState<LocataireConversation[]>([]);
+  const [paiements, setPaiements] = useState<LocatairePaiement[]>([]);
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    let mounted = true;
+
+    Promise.all([
+      getLocataireVisibleBiens(),
+      getLocataireContrats(),
+      getLocataireConversations(),
+      getLocatairePaiements(),
+    ])
+      .then(([biensData, contratsData, conversationsData, paiementsData]) => {
+        if (!mounted) return;
+        setBiens(biensData);
+        setContrats(contratsData);
+        setConversations(conversationsData);
+        setPaiements(paiementsData);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const bien = useMemo(() => getBienForLocataire(CURRENT_LOCATAIRE_ID), [refreshTick]);
-  const contrats = useMemo(() => getContratsForLocataire(CURRENT_LOCATAIRE_ID), [refreshTick]);
-  const contratActif = contrats.find((contract) => contract.statut === 'actif') ?? contrats[0] ?? null;
-  const conversations = useMemo(
-    () => getAllConversations().filter((conversation) => conversation.locataireId === CURRENT_LOCATAIRE_ID),
-    [refreshTick],
-  );
+  const bien = biens[0] ?? null;
+  const contratActif = contrats.find((contract) => contract.etat === 'signe') ?? contrats[0] ?? null;
 
-  const demandesAnnulation = bien?.demandesAnnulation.filter((demande) => demande.locataire === CURRENT_LOCATAIRE_NOM) ?? [];
-  const departsSignales = bien?.departsPreavis.filter((depart) => depart.locataire === CURRENT_LOCATAIRE_NOM) ?? [];
-  const sinistresDeclares = bien?.sinistres ?? [];
-  const paiementsEffectues = bien?.paiements.filter((payment) => payment.contratId === contratActif?.id) ?? [];
+  const demandesAnnulation: Array<{ statut: string }> = [];
+  const departsSignales: Array<{ dateSignalement: string }> = [];
+  const sinistresDeclares: Array<{ dateSinistre: string; statut: string }> = [];
+  const paiementsEffectues = paiements.filter((payment) => payment.contratId === contratActif?.id);
   const messagesTotal = conversations.reduce((sum, conversation) => sum + conversation.messages.length, 0);
 
   const progressionContrat = 3
@@ -106,9 +128,9 @@ export default function LocataireDashboard() {
             title="Tableau de bord"
             right={
               <View style={styles.headerIcons}>
-                <Link href="/locataire/biens" asChild>
+                <Link href="/locataire/notifications" asChild>
                   <Pressable style={styles.iconButton}>
-                    <Ionicons name="home-outline" size={26} color={KleaColors.secondary} />
+                    <Ionicons name="notifications-circle-outline" size={26} color={KleaColors.secondary} />
                   </Pressable>
                 </Link>
                 <Link href="/locataire/profil" asChild>

@@ -1,4 +1,5 @@
 import { Picker } from '@react-native-picker/picker';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
@@ -8,62 +9,87 @@ import { KleaInput } from '@/components/ui/klea-input';
 import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors, KleaRadius } from '@/constants/theme';
 import {
-  CURRENT_LOCATAIRE_ID,
-  CURRENT_LOCATAIRE_NOM,
-  createDepartSignale,
-  getBienById,
-  getContratsForLocataire,
-  subscribeBiens,
-  type BienDetail,
-} from '@/utils/biens-store';
+  createLocataireDepart,
+  getLocataireContrats,
+  getLocataireDeparts,
+  type LocataireContrat,
+  type LocataireDepart,
+} from '@/utils/locataire-api';
 import { ensureLocataireVerifie } from '@/hooks/use-locataire-guard';
 
 export default function LocataireDepartScreen() {
-  const [refreshTick, forceRefresh] = useState(0);
+  const params = useLocalSearchParams<{ contratId?: string }>();
+  const requestedContratId = typeof params.contratId === 'string' ? params.contratId : '';
+  const [loading, setLoading] = useState(true);
   const [selectedBienId, setSelectedBienId] = useState('');
   const [datePrevue, setDatePrevue] = useState('');
+  const [contratsSignes, setContratsSignes] = useState<LocataireContrat[]>([]);
+  const [departs, setDeparts] = useState<LocataireDepart[]>([]);
+
+  const refresh = async () => {
+    try {
+      setLoading(true);
+      const [contratsData, departsData] = await Promise.all([
+        getLocataireContrats(),
+        getLocataireDeparts(),
+      ]);
+      setContratsSignes(contratsData.filter((contract) => contract.etat === 'signe'));
+      setDeparts(departsData);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    refresh();
   }, []);
 
-  const contratsSignes = useMemo(
-    () => getContratsForLocataire(CURRENT_LOCATAIRE_ID).filter((contract) => contract.etat === 'signe'),
-    [refreshTick],
-  );
+  useEffect(() => {
+    if (!requestedContratId) return;
+
+    const matchingContract = contratsSignes.find((contract) => contract.id === requestedContratId);
+    if (matchingContract) {
+      setSelectedBienId(matchingContract.bienId);
+    }
+  }, [requestedContratId, contratsSignes]);
 
   const biensAvecContratSigne = useMemo(() => {
-    const uniqueBienIds = Array.from(new Set(contratsSignes.map((contract) => contract.bienId)));
-    return uniqueBienIds
-      .map((id) => getBienById(id))
-      .filter((bien): bien is BienDetail => Boolean(bien));
-  }, [contratsSignes, refreshTick]);
+    const map = new Map<string, { id: string; titre: string }>();
+    contratsSignes.forEach((contract) => {
+      map.set(contract.bienId, { id: contract.bienId, titre: contract.bienTitre });
+    });
+    return Array.from(map.values());
+  }, [contratsSignes]);
 
   useEffect(() => {
     if (!selectedBienId && biensAvecContratSigne[0]) setSelectedBienId(biensAvecContratSigne[0].id);
   }, [biensAvecContratSigne, selectedBienId]);
 
   const bien = biensAvecContratSigne.find((item) => item.id === selectedBienId) ?? null;
-  const existingDepart = bien?.departsPreavis.find((depart) => depart.locataire === CURRENT_LOCATAIRE_NOM) ?? null;
+  const selectedContract = contratsSignes.find((item) => item.bienId === selectedBienId) ?? null;
+  const existingDepart = selectedContract ? departs.find((item) => item.contratId === selectedContract.id) ?? null : null;
 
-  const handleSignaler = () => {
+  const handleSignaler = async () => {
     if (!bien) return;
-    if (!ensureLocataireVerifie()) return;
+    if (!(await ensureLocataireVerifie())) return;
     if (!datePrevue.trim()) {
       Alert.alert('Date requise', 'Veuillez indiquer la date de depart prevue (AAAA-MM-JJ).');
       return;
     }
-    const ok = createDepartSignale(bien.id, CURRENT_LOCATAIRE_NOM, datePrevue.trim());
-    if (ok) {
-      Alert.alert('Depart signale', 'Votre depart a ete signale au bailleur.');
-      setDatePrevue('');
-    }
+    if (!selectedContract) return;
+    await createLocataireDepart(selectedContract.id, datePrevue.trim());
+    Alert.alert('Depart signale', 'Votre depart a ete signale au bailleur.');
+    setDatePrevue('');
+    await refresh();
   };
 
   return (
     <LocataireScreenShell title="Signaler mon depart" subtitle="">
-      {biensAvecContratSigne.length === 0 ? (
+      {loading ? (
+        <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+      ) : null}
+
+      {!loading && biensAvecContratSigne.length === 0 ? (
         <KleaCard><Text style={styles.emptyText}>Vous devez avoir signe un contrat pour signaler un depart.</Text></KleaCard>
       ) : (
         <KleaCard style={styles.card}>

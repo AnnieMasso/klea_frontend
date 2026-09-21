@@ -23,7 +23,7 @@ import {
     resetRegistrationDraft,
     updateRegistrationDraft,
 } from '../utils/registration-draft';
-import { createBailleurAccount, createLocataireAccount } from '../utils/biens-store';
+import { registerUser } from '../utils/auth-api';
 
 const roleOptions = [
   { label: 'Sélectionnez un rôle', value: '' },
@@ -65,14 +65,28 @@ export default function RegisterScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRolePicker, setShowRolePicker] = useState(false);
 
+  const showFeedback = (title: string, message: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.alert(`${title}\n${message}`);
+      return;
+    }
+    Alert.alert(title, message);
+  };
+
   const showStep2 = form.role !== 'admin';
   const showAssuranceField = form.role === 'locataire';
   const passwordStrength = getPasswordStrength(form.password);
 
   useEffect(() => {
-    const draft = getRegistrationDraft();
-    setStep(draft.step);
-    setForm(draft.form);
+    const draft = getRegistrationDraft() as Partial<{ step: number; form: Partial<typeof initialRegistrationForm> }>;
+    const safeStep = [1, 2, 3].includes(Number(draft?.step)) ? Number(draft?.step) : 1;
+    const safeForm = {
+      ...initialRegistrationForm,
+      ...(draft?.form && typeof draft.form === 'object' ? draft.form : {}),
+    };
+
+    setStep(safeStep);
+    setForm(safeForm);
   }, []);
 
   useEffect(() => {
@@ -101,6 +115,9 @@ export default function RegisterScreen() {
 
     if (!form.cniVerso.trim()) nextErrors.cniVerso = 'Veuillez ajouter le recto de votre CNI.';
     if (!form.cniRecto.trim()) nextErrors.cniRecto = 'Veuillez ajouter le verso de votre CNI.';
+    if (showAssuranceField && !form.assuranceHabitation.trim()) {
+      nextErrors.assuranceHabitation = "Veuillez ajouter votre document d'assurance habitation.";
+    }
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
@@ -153,52 +170,44 @@ export default function RegisterScreen() {
 
   const pickDocument = async () => {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      type: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
       copyToCacheDirectory: true,
     });
 
-    if (!result.canceled && result.assets?.[0]?.name) {
-      updateField('assuranceHabitation', result.assets[0].name);
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      updateField('assuranceHabitation', result.assets[0].uri);
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (showStep2 && !validateStep2()) {
       setStep(2);
       return;
     }
     if (!validateStep3()) return;
+
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      if (form.role === 'bailleur') {
-        createBailleurAccount({
-          nom: form.nom.trim(),
-          prenom: form.prenom.trim(),
-          email: form.email.trim(),
-          cniRecto: form.cniRecto || undefined,
-          cniVerso: form.cniVerso || undefined,
-        });
-      } else if (form.role === 'locataire') {
-        createLocataireAccount({
-          nom: form.nom.trim(),
-          prenom: form.prenom.trim(),
-          email: form.email.trim(),
-          cniRecto: form.cniRecto || undefined,
-          cniVerso: form.cniVerso || undefined,
-          assuranceHabitation: form.assuranceHabitation || undefined,
-        });
-      }
+
+    try {
+      await registerUser({
+        nom: form.nom.trim(),
+        prenom: form.prenom.trim() || undefined,
+        email: form.email.trim(),
+        role: form.role as 'bailleur' | 'locataire',
+        motDePasse: form.password,
+        cniRectoUri: form.cniRecto || undefined,
+        cniVersoUri: form.cniVerso || undefined,
+        assuranceHabitationUri: form.assuranceHabitation || undefined,
+      });
+
       resetRegistrationDraft();
-      Alert.alert('Inscription réussie', 'Votre compte a été créé et est en attente de validation par l\'administrateur.');
-      if (form.role === 'bailleur') {
-        router.replace('/bailleur');
-      } else if (form.role === 'locataire') {
-        router.replace('/locataire' as any);
-      } else {
-        router.replace('/login');
-      }
-    }, 600);
+      // showFeedback('Inscription réussie', 'Votre compte a été créé et est en attente de validation par l\'administrateur.');
+      router.replace('/login');
+    } catch (error) {
+      showFeedback('Erreur', error instanceof Error ? error.message : 'Il s\'est produit une erreur lors de votre inscription.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -207,7 +216,7 @@ export default function RegisterScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.headerCard}>
           <Image
-            source={require('../assets/images/klea-logo-horizontal-color.svg')}
+            source={require('../assets/images/klea-icon-app.svg')}
             style={styles.logo}
             contentFit="contain"
           />
@@ -331,22 +340,22 @@ export default function RegisterScreen() {
             <Text style={styles.helperText}>Veuillez fournir votre carte d'identité et une assurance habitation si vous en avez</Text>
             <View style={styles.uploadCard}>
               <Text style={styles.uploadTitle}>CNI recto</Text>
-              <Pressable style={styles.uploadButton} onPress={() => pickImage('cniVerso')}>
+              <Pressable style={styles.uploadButton} onPress={() => pickImage('cniRecto')}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#10322F" />
                 <Text style={styles.uploadButtonText}>Ajouter le recto de votre CNI</Text>
               </Pressable>
-              {form.cniVerso ? <Text style={styles.fileName}>Sélection : {form.cniVerso.split('/').pop()}</Text> : null}
-              {errors.cniVerso ? <Text style={styles.errorText}>{errors.cniVerso}</Text> : null}
+              {form.cniRecto ? <Text style={styles.fileName}>Sélection : {form.cniRecto.split('/').pop()}</Text> : null}
+              {errors.cniRecto ? <Text style={styles.errorText}>{errors.cniRecto}</Text> : null}
             </View>
 
             <View style={styles.uploadCard}>
-              <Text style={styles.uploadTitle}>CNI versorecto</Text>
-              <Pressable style={styles.uploadButton} onPress={() => pickImage('cniRecto')}>
+              <Text style={styles.uploadTitle}>CNI verso</Text>
+              <Pressable style={styles.uploadButton} onPress={() => pickImage('cniVerso')}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#10322F" />
                 <Text style={styles.uploadButtonText}>Ajouter le verso de votre CNI</Text>
               </Pressable>
-              {form.cniRecto ? <Text style={styles.fileName}>Sélection : {form.cniRecto.split('/').pop()}</Text> : null}
-              {errors.cniRecto ? <Text style={styles.errorText}>{errors.cniRecto}</Text> : null}
+              {form.cniVerso ? <Text style={styles.fileName}>Sélection : {form.cniVerso.split('/').pop()}</Text> : null}
+              {errors.cniVerso ? <Text style={styles.errorText}>{errors.cniVerso}</Text> : null}
             </View>
 
             {showAssuranceField ? (
@@ -354,9 +363,10 @@ export default function RegisterScreen() {
                 <Text style={styles.uploadTitle}>Assurance habitation</Text>
                 <Pressable style={styles.uploadButton} onPress={pickDocument}>
                   <Ionicons name="document-outline" size={18} color="#10322F" />
-                  <Text style={styles.uploadButtonText}>Ajouter le fichier de votre assurance habitation</Text>
+                  <Text style={styles.uploadButtonText}>Ajouter le fichier (PDF, JPG, PNG, WEBP)</Text>
                 </Pressable>
                 {form.assuranceHabitation ? <Text style={styles.fileName}>Sélection : {form.assuranceHabitation}</Text> : null}
+                {errors.assuranceHabitation ? <Text style={styles.errorText}>{errors.assuranceHabitation}</Text> : null}
               </View>
             ) : null}
 
@@ -492,8 +502,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   logo: {
-    width: 130,
-    height: 36,
+    width: 56,
+    height: 56,
     marginBottom: 12,
   },
   eyebrow: {

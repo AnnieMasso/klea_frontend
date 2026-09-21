@@ -7,7 +7,7 @@ import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { VerificationStatusBadge } from '@/components/ui/verification-status-badge';
 import { KleaColors } from '@/constants/theme';
-import { deleteLocataireAccount, getAllLocataireAccounts, getBiens, getLocataireDeletionBlockReason, setLocataireBanni, setLocataireStatut, subscribeBiens } from '@/utils/biens-store';
+import { AdminLocataireRow, deleteAdminUser, getAdminLocataires, validateAdminUser } from '@/utils/admin-api';
 
 type StatusFilter = 'tous' | 'verifie' | 'non_verifie';
 type DateSort = 'recent' | 'ancien';
@@ -18,39 +18,54 @@ function formatDate(value: string) {
 
 export default function AdminLocatairesScreen() {
   const router = useRouter();
-  const [, forceRefresh] = useState(0);
+  const [rows, setRows] = useState<AdminLocataireRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('tous');
   const [dateSort, setDateSort] = useState<DateSort>('recent');
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    load();
   }, []);
 
-  const locataires = getAllLocataireAccounts();
+  const load = async () => {
+    try {
+      setLoading(true);
+      const data = await getAdminLocataires();
+      setRows(data);
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de charger les locataires.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredLocataires = useMemo(() => {
-    const filtered = locataires.filter((locataire) => {
-      if (statusFilter === 'verifie') return locataire.statut === 'verifie';
-      if (statusFilter === 'non_verifie') return locataire.statut !== 'verifie';
+    const filtered = rows.filter(({ locataire }) => {
+      if (statusFilter === 'verifie') return locataire.statut === 'actif';
+      if (statusFilter === 'non_verifie') return locataire.statut !== 'actif';
       return true;
     });
 
     return [...filtered].sort((left, right) => {
-      const leftDate = Date.parse(left.createdAt);
-      const rightDate = Date.parse(right.createdAt);
+      const leftDate = Date.parse(left.locataire.created_at);
+      const rightDate = Date.parse(right.locataire.created_at);
       return dateSort === 'recent' ? rightDate - leftDate : leftDate - rightDate;
     });
-  }, [dateSort, locataires, statusFilter]);
+  }, [dateSort, rows, statusFilter]);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = (id: number) => {
     Alert.alert('Supprimer ce locataire ?', 'Cette action est irreversible.', [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
         style: 'destructive',
-        onPress: () => {
-          const result = deleteLocataireAccount(id);
-          if (!result.ok) Alert.alert('Impossible', result.message);
+        onPress: async () => {
+          try {
+            await deleteAdminUser(id);
+            await load();
+          } catch (error) {
+            Alert.alert('Impossible', error instanceof Error ? error.message : 'Suppression refusee.');
+          }
         },
       },
     ]);
@@ -81,21 +96,22 @@ export default function AdminLocatairesScreen() {
         </View>
       </KleaCard>
 
-      {filteredLocataires.length === 0 ? <KleaCard><Text style={styles.emptyText}>Aucun locataire pour ces filtres.</Text></KleaCard> : null}
+      {loading ? <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard> : null}
+      {!loading && filteredLocataires.length === 0 ? <KleaCard><Text style={styles.emptyText}>Aucun locataire pour ces filtres.</Text></KleaCard> : null}
 
-      {filteredLocataires.map((locataire) => (
+      {filteredLocataires.map((row) => (
         (() => {
-          const biensLoues = getBiens().filter((bien) => bien.locataireActuel?.id === locataire.id).length;
-          const isVerified = locataire.statut === 'verifie';
-          const deleteBlockReason = getLocataireDeletionBlockReason(locataire.id);
+          const locataire = row.locataire;
+          const biensLoues = row.occupied_bien ? 1 : 0;
+          const isVerified = locataire.statut === 'actif';
+          const deleteBlocked = row.has_ever_rented;
           return (
         <KleaCard key={locataire.id} style={styles.card}>
-          <Text style={styles.title}>{locataire.prenom} {locataire.nom}</Text>
+          <Text style={styles.title}>{locataire.prenom ?? ''} {locataire.nom}</Text>
           <Text style={styles.line}>{locataire.email}</Text>
           <Text style={styles.line}>Biens loues: {biensLoues}</Text>
-          <Text style={styles.line}>Inscrit le: {formatDate(locataire.createdAt)}</Text>
+          <Text style={styles.line}>Inscrit le: {formatDate(locataire.created_at)}</Text>
           <VerificationStatusBadge verified={isVerified} />
-          {locataire.banni ? <Text style={styles.banniLine}>Compte banni</Text> : null}
 
           <KleaButton
             title="Voir le detail"
@@ -104,10 +120,21 @@ export default function AdminLocatairesScreen() {
             style={styles.actionButton}
           />
           {!isVerified ? (
-            <KleaButton title="Valider" onPress={() => setLocataireStatut(locataire.id, 'verifie')} style={styles.actionButton} />
+            <KleaButton
+              title="Valider"
+              onPress={async () => {
+                try {
+                  await validateAdminUser(locataire.id);
+                  await load();
+                } catch (error) {
+                  Alert.alert('Erreur', error instanceof Error ? error.message : 'Validation impossible.');
+                }
+              }}
+              style={styles.actionButton}
+            />
           ) : null}
-          {!isVerified && !deleteBlockReason ? <KleaButton title="Supprimer" variant="ghost" onPress={() => handleDelete(locataire.id)} style={styles.actionButton} /> : null}
-          {!isVerified && deleteBlockReason ? <Text style={styles.warningText}>{deleteBlockReason}</Text> : null}
+          {!isVerified && !deleteBlocked ? <KleaButton title="Supprimer" variant="ghost" onPress={() => handleDelete(locataire.id)} style={styles.actionButton} /> : null}
+          {!isVerified && deleteBlocked ? <Text style={styles.warningText}>Ce locataire a deja loue un bien.</Text> : null}
         </KleaCard>
           );
         })()

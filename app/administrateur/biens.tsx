@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AdminScreenShell } from '@/components/ui/admin-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
-import { getBiens, removeBien, setBienValidationStatut, subscribeBiens } from '@/utils/biens-store';
+import { AdminBienRow, deleteAdminBien, getAdminBiens, validateAdminBien } from '@/utils/admin-api';
 
 type StatusFilter = 'tous' | 'verifie' | 'non_verifie';
 type DateSort = 'recent' | 'ancien';
@@ -17,52 +17,95 @@ function formatDate(value: string) {
 
 export default function AdminBiensScreen() {
   const router = useRouter();
-  const [, forceRefresh] = useState(0);
+  const [rows, setRows] = useState<AdminBienRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('tous');
   const [dateSort, setDateSort] = useState<DateSort>('recent');
 
+  const showFeedback = (title: string, message: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.alert(`${title}\n${message}`);
+      return;
+    }
+
+    Alert.alert(title, message);
+  };
+
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    load();
   }, []);
 
-  const biens = getBiens();
+  const load = async () => {
+    try {
+      setLoading(true);
+      const data = await getAdminBiens();
+      setRows(data);
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de charger les biens.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredBiens = useMemo(() => {
-    const filtered = biens.filter((bien) => {
-      if (statusFilter === 'verifie') return bien.validationStatut === 'verifie';
-      if (statusFilter === 'non_verifie') return bien.validationStatut !== 'verifie';
+    const filtered = rows.filter(({ bien }) => {
+      if (statusFilter === 'verifie') return bien.statut === 'actif';
+      if (statusFilter === 'non_verifie') return bien.statut !== 'actif';
       return true;
     });
 
     return [...filtered].sort((left, right) => {
-      const leftDate = Date.parse(left.createdAt);
-      const rightDate = Date.parse(right.createdAt);
+      const leftDate = Date.parse(left.bien.created_at);
+      const rightDate = Date.parse(right.bien.created_at);
       return dateSort === 'recent' ? rightDate - leftDate : leftDate - rightDate;
     });
-  }, [biens, dateSort, statusFilter]);
+  }, [rows, dateSort, statusFilter]);
 
-  const handleDelete = (id: string) => {
-    Alert.alert('Supprimer ce bien ?', 'Cette action est irreversible.', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: () => {
-          const result = removeBien(id);
-          if (!result.ok) Alert.alert('Impossible', result.message);
-        },
-      },
-    ]);
+  const handleDelete = (id: number) => {
+    if (busyId !== null) return;
+
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Supprimer ce bien ? Cette action est irreversible.')
+      : true;
+
+    if (!confirmed) return;
+
+    void (async () => {
+      try {
+        setBusyId(id);
+        await deleteAdminBien(id);
+        await load();
+        showFeedback('Suppression reussie', 'Le bien a ete supprime.');
+      } catch (error) {
+        showFeedback('Impossible', error instanceof Error ? error.message : 'Suppression refusee.');
+      } finally {
+        setBusyId(null);
+      }
+    })();
   };
 
-  const handleValidate = (id: string) => {
-    Alert.alert('Valider ce bien ?', 'Cette action est irreversible.', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Valider',
-        onPress: () => setBienValidationStatut(id, 'verifie'),
-      },
-    ]);
+  const handleValidate = (id: number) => {
+    if (busyId !== null) return;
+
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Valider ce bien ? Cette action est irreversible.')
+      : true;
+
+    if (!confirmed) return;
+
+    void (async () => {
+      try {
+        setBusyId(id);
+        await validateAdminBien(id);
+        await load();
+        showFeedback('Validation reussie', 'Le bien a ete valide.');
+      } catch (error) {
+        showFeedback('Erreur', error instanceof Error ? error.message : 'Validation impossible.');
+      } finally {
+        setBusyId(null);
+      }
+    })();
   };
 
   return (
@@ -90,16 +133,17 @@ export default function AdminBiensScreen() {
         </View>
       </KleaCard>
 
-      {filteredBiens.length === 0 ? <KleaCard><Text style={styles.emptyText}>Aucun bien pour ces filtres.</Text></KleaCard> : null}
+      {loading ? <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard> : null}
+      {!loading && filteredBiens.length === 0 ? <KleaCard><Text style={styles.emptyText}>Aucun bien pour ces filtres.</Text></KleaCard> : null}
 
-      {filteredBiens.map((bien) => (
+      {filteredBiens.map(({ bien, occupied_by, has_ever_been_rented }) => (
         <KleaCard key={bien.id} style={styles.card}>
           <Text style={styles.title}>{bien.titre}</Text>
           <Text style={styles.line}>{bien.type} - {bien.ville ?? '-'}</Text>
-          <Text style={styles.line}>Cree le: {formatDate(bien.createdAt)}</Text>
-          <Text style={styles.line}>Occupation: {bien.locataireActuel ? 'Occupe' : 'Libre'}</Text>
-          <Text style={styles.line}>Locataire actuel: {bien.locataireActuel?.nomComplet ?? '-'}</Text>
-          <Text style={styles.statusLine}>Statut: {bien.validationStatut === 'verifie' ? 'Verifie' : 'En attente'}</Text>
+          <Text style={styles.line}>Cree le: {formatDate(bien.created_at)}</Text>
+          <Text style={styles.line}>Occupation: {occupied_by ? 'Occupe' : 'Libre'}</Text>
+          <Text style={styles.line}>Locataire actuel: {occupied_by ? `${occupied_by.prenom ?? ''} ${occupied_by.nom}`.trim() : '-'}</Text>
+          <Text style={styles.statusLine}>Statut: {bien.statut === 'actif' ? 'Verifie' : 'En attente'}</Text>
 
           <KleaButton
             title="Voir"
@@ -107,13 +151,13 @@ export default function AdminBiensScreen() {
             onPress={() => router.push(`/administrateur/bien/${bien.id}` as any)}
             style={styles.actionButton}
           />
-          {bien.validationStatut === 'en_attente' ? (
-            <KleaButton title="Valider le bien" onPress={() => handleValidate(bien.id)} style={styles.actionButton} />
+          {bien.statut === 'inactif' ? (
+            <KleaButton title={busyId === bien.id ? 'Traitement...' : 'Valider le bien'} disabled={busyId === bien.id} onPress={() => handleValidate(bien.id)} style={styles.actionButton} />
           ) : null}
-          {bien.occupationStatut === 'en_location' ? (
-            <Text style={styles.restrictedText}>Suppression indisponible: ce bien est deja occupe.</Text>
+          {has_ever_been_rented ? (
+            <Text style={styles.restrictedText}>Suppression indisponible: ce bien a deja ete loue.</Text>
           ) : (
-            <KleaButton title="Supprimer" variant="ghost" onPress={() => handleDelete(bien.id)} style={styles.actionButton} />
+            <KleaButton title="Supprimer" variant="ghost" disabled={busyId === bien.id} onPress={() => handleDelete(bien.id)} style={styles.actionButton} />
           )}
         </KleaCard>
       ))}

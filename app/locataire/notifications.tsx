@@ -7,14 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
 import {
-    CURRENT_LOCATAIRE_ID,
-    getNotificationsForRecipient,
-    markAllNotificationsRead,
-    markNotificationRead,
-    subscribeBiens,
-    type AppNotification,
-    type NotificationType,
-} from '@/utils/biens-store';
+  getLocataireNotifications,
+  type LocataireNotification,
+} from '@/utils/locataire-api';
 
 const semantic = {
   success: '#0F7048',
@@ -29,7 +24,7 @@ const semantic = {
 };
 
 const typeMeta: Record<
-  NotificationType,
+  LocataireNotification['type'],
   { icon: ComponentProps<typeof Ionicons>['name']; color: string; bg: string; actionLabel: string }
 > = {
   payment: { icon: 'cash-outline', color: semantic.success, bg: semantic.successBg, actionLabel: 'Voir mes paiements' },
@@ -64,15 +59,27 @@ const actions: Action[] = [
 export default function LocataireNotificationsScreen() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selected, setSelected] = useState<AppNotification | null>(null);
-  const [, forceRefresh] = useState(0);
+  const [selected, setSelected] = useState<(LocataireNotification & { read?: boolean }) | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Array<LocataireNotification & { read: boolean }>>([]);
+
+  const refresh = async () => {
+    try {
+      setLoading(true);
+      const data = await getLocataireNotifications();
+      setItems((previous) => {
+        const readMap = new Map(previous.map((item) => [item.id, item.read]));
+        return data.map((item) => ({ ...item, read: readMap.get(item.id) ?? false }));
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    refresh();
   }, []);
 
-  const items = getNotificationsForRecipient(CURRENT_LOCATAIRE_ID);
   const unreadCount = items.filter((item) => !item.read).length;
 
   const sections = useMemo(() => {
@@ -84,11 +91,15 @@ export default function LocataireNotificationsScreen() {
     ];
   }, [items]);
 
-  const markAllAsRead = () => markAllNotificationsRead(CURRENT_LOCATAIRE_ID);
+  const markAllAsRead = () => {
+    setItems((previous) => previous.map((item) => ({ ...item, read: true })));
+  };
 
-  const openDetail = (item: AppNotification) => {
+  const openDetail = (item: LocataireNotification & { read: boolean }) => {
     setSelected(item);
-    if (!item.read) markNotificationRead(item.id);
+    if (!item.read) {
+      setItems((previous) => previous.map((entry) => (entry.id === item.id ? { ...entry, read: true } : entry)));
+    }
   };
 
   const hasNotifications = items.length > 0;
@@ -122,7 +133,13 @@ export default function LocataireNotificationsScreen() {
             )}
           </View>
 
-          {hasNotifications ? (
+          {loading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>Chargement...</Text>
+            </View>
+          ) : null}
+
+          {!loading && hasNotifications ? (
             sections.map((section) =>
               section.data.length === 0 ? null : (
                 <View key={section.label} style={styles.section}>
@@ -157,7 +174,9 @@ export default function LocataireNotificationsScreen() {
                 </View>
               ),
             )
-          ) : (
+          ) : null}
+
+          {!loading && !hasNotifications ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconCircle}>
                 <Ionicons name="notifications-off-outline" size={28} color={KleaColors.secondary} />
@@ -167,7 +186,7 @@ export default function LocataireNotificationsScreen() {
                 Vous serez averti ici s'il y'a du nouveau
               </Text>
             </View>
-          )}
+          ) : null}
         </ScrollView>
 
         <View style={styles.bottomBar}>

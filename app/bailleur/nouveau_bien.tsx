@@ -12,7 +12,7 @@ import { KleaHeader } from '@/components/ui/klea-header';
 import { KleaInput } from '@/components/ui/klea-input';
 import { KleaMapView, type MapCoordinates as Coordinates, type MapPressPayload as MapPressEvent, type MapRegion as Region } from '@/components/ui/klea-map-view';
 import { KleaColors, KleaRadius } from '@/constants/theme';
-import { addBien } from '@/utils/biens-store';
+import { createMyBien } from '@/utils/bailleur-api';
 
 type FormData = {
 	titre: string;
@@ -74,8 +74,18 @@ export default function NouveauBienScreen() {
 	const [useMyPosition, setUseMyPosition] = useState(false);
 	const [selectedCoordinates, setSelectedCoordinates] = useState<Coordinates | null>(null);
 	const [mapRegion, setMapRegion] = useState<Region>(defaultRegion);
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const progress = useMemo(() => ((currentStep + 1) / steps.length) * 100, [currentStep]);
+
+	const showFeedback = (title: string, message: string) => {
+		if (Platform.OS === 'web' && typeof window !== 'undefined') {
+			window.alert(`${title}\n${message}`);
+			return;
+		}
+
+		Alert.alert(title, message);
+	};
 
 	const setField = <K extends keyof FormData>(key: K, value: FormData[K]) => {
 		setData((prev) => ({ ...prev, [key]: value }));
@@ -258,33 +268,42 @@ export default function NouveauBienScreen() {
 		setCurrentStep((prev) => Math.max(prev - 1, 0));
 	};
 
-	const onSubmit = () => {
+	const onSubmit = async () => {
 		if (!validateStep(currentStep)) return;
+		if (isSubmitting) return;
 
-		addBien({
-			titre: data.titre.trim(),
-			type: data.type,
-			description: data.description.trim(),
-			montant: Number(data.montant || 0),
-			modalitePaiement: data.modalitePaiement,
-			surface: Number(data.surface || 0),
-			nbChambres: Number(data.nbChambres || 0),
-			nbSalles: Number(data.nbSalles || 0),
-			usages: data.usages,
-			adresse: data.adresse.trim(),
-			pays: data.quartier.trim(),
-			ville: data.ville.trim(),
-			lieuDit: data.lieu_dit.trim(),
-			localisation: data.localisation,
-			images: data.images.filter((img) => img.trim().length > 0),
-		});
+		setIsSubmitting(true);
 
-		Alert.alert('Bien enregistre', 'Le bien a ete ajoute avec succes.');
-		setData(initialData);
-		setErrors({});
-		setUseMyPosition(false);
-		setCurrentStep(0);
-		router.replace('/bailleur/mes_biens');
+		try {
+			await createMyBien({
+				titre: data.titre.trim(),
+				type: data.type,
+				description: data.description.trim(),
+				montant: Number(data.montant || 0),
+				modalitePaiement: data.modalitePaiement,
+				surface: Number(data.surface || 0),
+				nbChambres: Number(data.nbChambres || 0),
+				nbSalles: Number(data.nbSalles || 0),
+				usages: data.usages,
+				ville: data.ville.trim(),
+				quartier: data.quartier.trim() || 'Cameroun',
+				lieuDit: data.lieu_dit.trim() || data.adresse.trim(),
+				latitude: selectedCoordinates ? String(selectedCoordinates.latitude) : undefined,
+				longitude: selectedCoordinates ? String(selectedCoordinates.longitude) : undefined,
+				images: data.images.filter((img) => img.trim().length > 0),
+			});
+
+			showFeedback('Bien enregistre', 'Le bien a ete ajoute en attente de validation administrateur.');
+			setData(initialData);
+			setErrors({});
+			setUseMyPosition(false);
+			setCurrentStep(0);
+			router.replace('/bailleur/mes_biens');
+		} catch (error) {
+			showFeedback('Erreur', error instanceof Error ? error.message : 'Impossible d\'enregistrer le bien.');
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
 
 	const selectedImages = data.images.filter((image) => image.trim().length > 0);
@@ -550,6 +569,7 @@ export default function NouveauBienScreen() {
 							onPress={onSubmit}
 							icon="checkmark-outline"
 							iconPosition="right"
+							disabled={isSubmitting}
 							style={styles.actionButton}
 						/>
 					)}

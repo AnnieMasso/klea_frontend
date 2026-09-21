@@ -9,12 +9,11 @@ import { KleaCard } from '@/components/ui/klea-card';
 import { KleaInput } from '@/components/ui/klea-input';
 import { KleaColors } from '@/constants/theme';
 import {
-    CURRENT_ADMIN_ID,
-    getConversationsForParticipant,
-    sendMessageToConversation,
-    subscribeBiens,
-    type ConversationLigne,
-} from '@/utils/biens-store';
+  getAdminMe,
+  getAdminConversations,
+  sendAdminMessage,
+  type AdminConversation,
+} from '@/utils/admin-api';
 
 const profileImageSource = require('../../assets/images/icon.png');
 
@@ -35,16 +34,42 @@ export default function AdminConversationScreen() {
   const params = useLocalSearchParams<{ conversationId?: string }>();
   const requestedConversationId = typeof params.conversationId === 'string' ? params.conversationId : '';
 
-  const [conversations, setConversations] = useState<ConversationLigne[]>(() => getConversationsForParticipant(CURRENT_ADMIN_ID));
+  const [conversations, setConversations] = useState<AdminConversation[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedConversationId, setSelectedConversationId] = useState(requestedConversationId);
   const [draft, setDraft] = useState('');
+  const [myDisplayName, setMyDisplayName] = useState('Administrateur');
 
-  const refresh = () => setConversations(getConversationsForParticipant(CURRENT_ADMIN_ID));
+  const refresh = async () => {
+    try {
+      setLoading(true);
+      const data = await getAdminConversations();
+      setConversations(data);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     refresh();
-    const unsubscribe = subscribeBiens(refresh);
-    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getAdminMe()
+      .then((user) => {
+        if (cancelled) return;
+        const fullName = [user.prenom ?? '', user.nom ?? ''].map((part) => part.trim()).filter(Boolean).join(' ');
+        setMyDisplayName(fullName || user.email || 'Administrateur');
+      })
+      .catch(() => {
+        if (!cancelled) setMyDisplayName('Administrateur');
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -59,12 +84,17 @@ export default function AdminConversationScreen() {
   }, [requestedConversationId]);
 
   const selectedConversation = conversations.find((item) => item.id === selectedConversationId) ?? null;
+  const selectedParticipantLabel = selectedConversation
+    ? `${selectedConversation.participantRole === 'bailleur' ? 'Bailleur' : 'Locataire'}: ${selectedConversation.participantNom}`
+    : '';
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!selectedConversation) return;
-    const ok = sendMessageToConversation(selectedConversation.id, draft, CURRENT_ADMIN_ID);
-    if (!ok) return;
+    if (!draft.trim()) return;
+
+    await sendAdminMessage(selectedConversation.id, draft.trim());
     setDraft('');
+    await refresh();
   };
 
   const handleOpenConversation = (conversationId: string) => {
@@ -90,7 +120,7 @@ export default function AdminConversationScreen() {
               <Pressable onPress={() => router.push(`/administrateur/bien/${selectedConversation.bienId}` as any)}>
                 <Text style={styles.threadTitle}>{selectedConversation.bienTitre}</Text>
               </Pressable>
-              <Text style={styles.metaLine}>Locataire: {selectedConversation.locataireNom}</Text>
+              <Text style={styles.metaLine}>{selectedParticipantLabel}</Text>
             </View>
           </View>
 
@@ -100,7 +130,7 @@ export default function AdminConversationScreen() {
               return (
                 <View key={message.id} style={[styles.messageRow, isMine ? styles.messageRowMine : styles.messageRowOther]}>
                   <View style={[styles.messageBubble, isMine ? styles.messageBubbleMine : styles.messageBubbleOther]}>
-                    <Text style={styles.messageAuthor}>{message.auteurNom}</Text>
+                    <Text style={styles.messageAuthor}>{isMine ? myDisplayName : message.auteurNom}</Text>
                     <Text style={[styles.messageContent, isMine ? styles.messageContentMine : styles.messageContentOther]}>{message.contenu}</Text>
                     <Text style={styles.messageDate}>{formatMessageDate(message.date)}</Text>
                   </View>
@@ -125,9 +155,10 @@ export default function AdminConversationScreen() {
   }
 
   return (
-    <AdminScreenShell title="Messagerie" subtitle="Echanges avec les locataires">
+    <AdminScreenShell title="Messagerie" subtitle="Echanges avec les bailleurs et locataires">
       <KleaCard style={styles.card}>
-        {conversations.length === 0 ? <Text style={styles.emptyText}>Aucune conversation disponible.</Text> : null}
+        {loading ? <Text style={styles.emptyText}>Chargement...</Text> : null}
+        {!loading && conversations.length === 0 ? <Text style={styles.emptyText}>Aucune conversation disponible pour le moment.</Text> : null}
         {conversations.map((conversation) => (
           <Pressable key={conversation.id} style={styles.whatsappItem} onPress={() => handleOpenConversation(conversation.id)}>
             <View style={styles.avatarCircle}>
@@ -138,7 +169,7 @@ export default function AdminConversationScreen() {
                 <Text style={styles.conversationTitle}>{conversation.bienTitre}</Text>
                 <Text style={styles.dateText}>{formatMessageDate(conversation.lastMessageDate)}</Text>
               </View>
-              <Text style={styles.metaLine}>Locataire: {conversation.locataireNom}</Text>
+              <Text style={styles.metaLine}>{conversation.participantRole === 'bailleur' ? 'Bailleur' : 'Locataire'}: {conversation.participantNom}</Text>
               <Text style={styles.previewText} numberOfLines={1}>{conversation.lastMessage}</Text>
             </View>
           </Pressable>

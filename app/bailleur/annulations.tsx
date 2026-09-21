@@ -6,7 +6,7 @@ import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
-import { confirmDemandeAnnulation, getAllDemandesAnnulation, subscribeBiens } from '@/utils/biens-store';
+import { getBailleurAnnulations, type BailleurAnnulation } from '@/utils/bailleur-api';
 
 type DisplayMode = 'date' | 'bien' | 'locataire';
 
@@ -21,14 +21,20 @@ export default function AnnulationsScreen() {
         ? 'bien'
         : 'date';
 
-  const [items, setItems] = useState(() => getAllDemandesAnnulation());
+  const [items, setItems] = useState<BailleurAnnulation[]>([]);
+  const [loading, setLoading] = useState(true);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(initialMode);
   const [bienFilter, setBienFilter] = useState(initialBienId);
 
   useEffect(() => {
-    setItems(getAllDemandesAnnulation());
-    const unsubscribe = subscribeBiens(() => setItems(getAllDemandesAnnulation()));
-    return unsubscribe;
+    (async () => {
+      try {
+        setLoading(true);
+        setItems(await getBailleurAnnulations());
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -49,13 +55,8 @@ export default function AnnulationsScreen() {
     return clone.sort((a, b) => a.locataire.localeCompare(b.locataire, 'fr', { sensitivity: 'base' }));
   }, [items, bienFilter, displayMode]);
 
-  const handleConfirmDemande = (bienId: string, demandeId: string) => {
-    const ok = confirmDemandeAnnulation(bienId, demandeId);
-    if (!ok) {
-      Alert.alert('Erreur', 'Impossible de confirmer cette demande d\'annulation.');
-      return;
-    }
-    Alert.alert('Confirmation reussie', 'La demande d\'annulation a ete acceptee.');
+  const handleConfirmDemande = () => {
+    Alert.alert('Information', 'Cette demande est deja prise en compte par l\'API.');
   };
 
   return (
@@ -69,7 +70,11 @@ export default function AnnulationsScreen() {
         </View>
       </KleaCard>
 
-      {filteredAndSorted.length === 0 ? (
+      {loading ? (
+        <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+      ) : null}
+
+      {!loading && filteredAndSorted.length === 0 ? (
         <KleaCard><Text style={styles.emptyText}>Aucune demande d'annulation.</Text></KleaCard>
       ) : null}
 
@@ -80,11 +85,11 @@ export default function AnnulationsScreen() {
           <Text style={styles.line}>Date: {item.date}</Text>
           <Text style={styles.line}>Motif: {item.motif}</Text>
           <Text style={styles.line}>Statut: {item.statut}</Text>
-          {item.statut === 'en_attente' ? (
+          {item.statut === 'acceptee' ? (
             <KleaButton
-              title="Confirmer la demande"
+              title="Demande deja acceptee"
               variant="secondary"
-              onPress={() => handleConfirmDemande(item.bienId, item.id)}
+              onPress={handleConfirmDemande}
               style={styles.actionButton}
             />
           ) : null}

@@ -1,65 +1,71 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
-import { KleaInput } from '@/components/ui/klea-input';
 import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors } from '@/constants/theme';
-import {
-  CURRENT_LOCATAIRE_ID,
-  CURRENT_LOCATAIRE_NOM,
-  createDemandeAnnulation,
-  getContratSpecifiqueById,
-  getContratStatutAffichage,
-  getContratsForLocataire,
-  signContrat,
-  subscribeBiens,
-} from '@/utils/biens-store';
-import { downloadContrat } from '@/utils/contrat-pdf';
 import { ensureLocataireVerifie } from '@/hooks/use-locataire-guard';
+import {
+  getLocataireContratForPdf,
+  getLocataireContrats,
+  signLocataireContrat,
+  type LocataireContrat,
+} from '@/utils/locataire-api';
+import { downloadContrat } from '@/utils/contrat-pdf';
+
+function etatLabel(etat: LocataireContrat['etat']) {
+  if (etat === 'signe') return 'Signe';
+  if (etat === 'annule') return 'Annule';
+  if (etat === 'resilie') return 'Resilie';
+  return 'En attente de signature';
+}
 
 export default function LocataireContratScreen() {
-  const [refreshTick, forceRefresh] = useState(0);
-  const [annulationTargetId, setAnnulationTargetId] = useState<string | null>(null);
-  const [motif, setMotif] = useState('');
+  const params = useLocalSearchParams<{ contratId?: string }>();
+  const requestedContratId = typeof params.contratId === 'string' ? params.contratId : '';
+  const [contrats, setContrats] = useState<LocataireContrat[]>([]);
+  const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  const refresh = () => {
+    setLoading(true);
+    return getLocataireContrats()
+      .then((items) => setContrats(items))
+      .catch((error) => Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.'))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    refresh();
   }, []);
 
-  const contrats = useMemo(() => getContratsForLocataire(CURRENT_LOCATAIRE_ID), [refreshTick]);
+  const visibleContrats = useMemo(() => {
+    if (!requestedContratId) return contrats;
+    const selected = contrats.find((contrat) => contrat.id === requestedContratId);
+    return selected ? [selected] : contrats;
+  }, [contrats, requestedContratId]);
 
-  const handleSigner = (bienId: string, contratId: string) => {
-    if (!ensureLocataireVerifie()) return;
-    const ok = signContrat(bienId, contratId);
-    if (ok) Alert.alert('Contrat signe', 'Vous avez signe le contrat avec succes.');
-  };
+  const handleSigner = async (contratId: string) => {
+    if (!(await ensureLocataireVerifie())) return;
 
-  const handleDemandeAnnulation = (bienId: string) => {
-    if (!ensureLocataireVerifie()) return;
-    if (!motif.trim()) {
-      Alert.alert('Motif requis', 'Veuillez indiquer le motif de votre demande.');
-      return;
-    }
-    const ok = createDemandeAnnulation(bienId, CURRENT_LOCATAIRE_NOM, motif.trim());
-    if (ok) {
-      Alert.alert('Demande envoyee', 'Votre demande d\'annulation a ete transmise au bailleur.');
-      setAnnulationTargetId(null);
-      setMotif('');
+    try {
+      await signLocataireContrat(contratId);
+      Alert.alert('Contrat signe', 'Vous avez signe le contrat avec succes.');
+      await refresh();
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Signature impossible.');
     }
   };
 
-  const handleDownload = async (bienId: string, contratId: string) => {
-    const contrat = getContratSpecifiqueById(contratId, bienId);
-    if (!contrat) return;
+  const handleDownload = async (contratId: string) => {
     setDownloadingId(contratId);
     try {
+      const contrat = await getLocataireContratForPdf(contratId);
       await downloadContrat(contrat);
-    } catch {
-      Alert.alert('Erreur', 'Impossible de telecharger le contrat.');
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de telecharger le contrat.');
     } finally {
       setDownloadingId(null);
     }
@@ -67,47 +73,51 @@ export default function LocataireContratScreen() {
 
   return (
     <LocataireScreenShell title="Mon contrat" subtitle="">
-      {contrats.length === 0 ? (
-        <KleaCard><Text style={styles.emptyText}>Vous n'avez aucun contrat pour le moment.</Text></KleaCard>
+      {loading ? (
+        <KleaCard><Text style={styles.emptyText}>Chargement des contrats...</Text></KleaCard>
       ) : null}
 
-      {contrats.map((contrat) => (
+      {!loading && visibleContrats.length === 0 ? (
+        <KleaCard><Text style={styles.emptyText}>Vous n avez aucun contrat pour le moment.</Text></KleaCard>
+      ) : null}
+
+      {visibleContrats.map((contrat) => (
         <KleaCard key={contrat.id} style={styles.card}>
           <Text style={styles.title}>{contrat.bienTitre}</Text>
           <Text style={styles.line}>Montant: {contrat.montant.toLocaleString('fr-FR')} FCFA</Text>
           <Text style={styles.line}>Duree: {contrat.dureeMois} mois</Text>
-          <Text style={styles.line}>Etat: {contrat.etat === 'en_attente' ? 'En attente de signature' : contrat.etat === 'signe' ? 'Signe' : 'Annule'}</Text>
-          <Text style={styles.statusLine}>Statut: {getContratStatutAffichage(contrat)}</Text>
+          <Text style={styles.line}>Etat: {etatLabel(contrat.etat)}</Text>
 
           {contrat.etat === 'en_attente' ? (
-            <KleaButton title="Signer le contrat" onPress={() => handleSigner(contrat.bienId, contrat.id)} style={styles.actionButton} />
+            <>
+              <KleaButton
+                title={downloadingId === contrat.id ? 'Generation...' : 'Consulter le contrat'}
+                variant="secondary"
+                onPress={() => handleDownload(contrat.id)}
+                disabled={downloadingId === contrat.id}
+                style={styles.actionButton}
+              />
+              <KleaButton title="Signer le contrat" onPress={() => handleSigner(contrat.id)} style={styles.actionButton} />
+            </>
           ) : null}
 
-          {contrat.etat === 'signe' ? (
+          {contrat.etat !== 'en_attente' ? (
             <KleaButton
-              title={downloadingId === contrat.id ? 'Generation…' : 'Telecharger le contrat'}
+              title={downloadingId === contrat.id ? 'Generation...' : 'Telecharger le contrat'}
               variant="secondary"
-              onPress={() => handleDownload(contrat.bienId, contrat.id)}
+              onPress={() => handleDownload(contrat.id)}
               disabled={downloadingId === contrat.id}
               style={styles.actionButton}
             />
           ) : null}
 
-          {contrat.etat !== 'annule' ? (
-            annulationTargetId === contrat.id ? (
-              <>
-                <KleaInput label="Motif de la demande" value={motif} onChangeText={setMotif} multiline numberOfLines={3} placeholder="Ex: mutation professionnelle" />
-                <KleaButton title="Envoyer la demande" onPress={() => handleDemandeAnnulation(contrat.bienId)} style={styles.actionButton} />
-                <KleaButton title="Annuler" variant="ghost" onPress={() => { setAnnulationTargetId(null); setMotif(''); }} style={styles.actionButton} />
-              </>
-            ) : (
-              <KleaButton
-                title="Demander l'annulation"
-                variant="ghost"
-                onPress={() => { setAnnulationTargetId(contrat.id); setMotif(''); }}
-                style={styles.actionButton}
-              />
-            )
+          {contrat.etat === 'signe' ? (
+            <KleaButton
+              title="Signaler le départ"
+              variant="ghost"
+              onPress={() => router.push(`/locataire/depart?contratId=${contrat.id}` as any)}
+              style={styles.actionButton}
+            />
           ) : null}
         </KleaCard>
       ))}
@@ -128,12 +138,6 @@ const styles = StyleSheet.create({
   line: {
     color: KleaColors.textMuted,
     fontSize: 13,
-    lineHeight: 20,
-  },
-  statusLine: {
-    color: KleaColors.secondary,
-    fontSize: 13,
-    fontWeight: '700',
     lineHeight: 20,
   },
   actionButton: {

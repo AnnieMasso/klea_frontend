@@ -6,7 +6,7 @@ import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
-import { getAllSignalements, subscribeBiens } from '@/utils/biens-store';
+import { getBailleurSinistres, type BailleurSinistre } from '@/utils/bailleur-api';
 
 const sinistreAssets: Record<string, ImageSourcePropType> = {
 	'maison.jpg': require('../../assets/images/maison.jpg'),
@@ -16,6 +16,9 @@ const sinistreAssets: Record<string, ImageSourcePropType> = {
 
 function getSinistreAsset(photoKey?: string): ImageSourcePropType | null {
 	if (!photoKey) return null;
+	if (photoKey.startsWith('http://') || photoKey.startsWith('https://') || photoKey.startsWith('file://')) {
+		return { uri: photoKey };
+	}
 	return sinistreAssets[photoKey] ?? null;
 }
 
@@ -30,7 +33,8 @@ export default function SignalementsScreen() {
 				? 'bien'
 				: 'date';
 
-	const [items, setItems] = useState(() => getAllSignalements());
+	const [items, setItems] = useState<BailleurSinistre[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [displayMode, setDisplayMode] = useState<'date' | 'bien' | 'locataire'>(initialMode);
 	const [bienFilter, setBienFilter] = useState(initialBienId);
 	const [previewImage, setPreviewImage] = useState<ImageSourcePropType | null>(null);
@@ -54,9 +58,14 @@ export default function SignalementsScreen() {
 	}, [items, bienFilter, displayMode]);
 
 	useEffect(() => {
-		setItems(getAllSignalements());
-		const unsubscribe = subscribeBiens(() => setItems(getAllSignalements()));
-		return unsubscribe;
+		(async () => {
+			try {
+				setLoading(true);
+				setItems(await getBailleurSinistres());
+			} finally {
+				setLoading(false);
+			}
+		})();
 	}, []);
 
 	return (
@@ -79,7 +88,13 @@ export default function SignalementsScreen() {
 				</View>
 			</KleaCard>
 
-					{filteredAndSorted.length === 0 ? (
+					{loading ? (
+						<KleaCard>
+							<Text style={styles.emptyText}>Chargement...</Text>
+						</KleaCard>
+					) : null}
+
+					{!loading && filteredAndSorted.length === 0 ? (
 						<KleaCard>
 							<Text style={styles.emptyText}>Aucun signalement.</Text>
 						</KleaCard>

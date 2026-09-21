@@ -2,421 +2,348 @@ import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaInput } from '@/components/ui/klea-input';
 import { KleaColors } from '@/constants/theme';
-import { CURRENT_BAILLEUR_ID, annulerContratForBien, createContratForBien, getAllContrats, getBienById, getContratById, getConversationsForParticipant, sendMessageToConversation, subscribeBiens, updateContratForBien, type ConversationLigne } from '@/utils/biens-store';
+import { resolveImageSource } from '@/utils/local-photos';
+import {
+  cancelBailleurContrat,
+  createBailleurContrat,
+	getAuthenticatedUser,
+  getBailleurContrats,
+  getBailleurConversations,
+	getMyBiens,
+  sendBailleurMessage,
+  type BailleurContrat,
+  type BailleurConversation,
+} from '@/utils/bailleur-api';
 
 const profileImageSource = require('../../assets/images/icon.png');
 
 function formatMessageDate(value: string) {
-	if (!value) return '-';
-	const messageDate = new Date(value);
-	const ageInHours = (Date.now() - messageDate.getTime()) / (1000 * 60 * 60);
-
-	if (ageInHours >= 24) {
-		return messageDate.toLocaleDateString('fr-FR', {
-			day: '2-digit',
-			month: '2-digit',
-			year: 'numeric',
-		});
-	}
-
-	return messageDate.toLocaleTimeString('fr-FR', {
-		hour: '2-digit',
-		minute: '2-digit',
-	});
+  if (!value) return '-';
+  const date = new Date(value);
+  const ageInHours = (Date.now() - date.getTime()) / (1000 * 60 * 60);
+  if (ageInHours >= 24) {
+    return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
 export default function ConversationScreen() {
-	const router = useRouter();
-	const params = useLocalSearchParams<{ conversationId?: string }>();
-	const requestedConversationId = typeof params.conversationId === 'string' ? params.conversationId : '';
-	const todayIso = new Date().toISOString().slice(0, 10);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ conversationId?: string }>();
+  const requestedConversationId = typeof params.conversationId === 'string' ? params.conversationId : '';
 
-	const [conversations, setConversations] = useState<ConversationLigne[]>(() => getConversationsForParticipant(CURRENT_BAILLEUR_ID));
-	const [selectedConversationId, setSelectedConversationId] = useState(requestedConversationId);
-	const [draft, setDraft] = useState('');
-	const [showContractForm, setShowContractForm] = useState(false);
-	const [editingContractId, setEditingContractId] = useState<string | null>(null);
-	const [contractType, setContractType] = useState<'determine' | 'indetermine'>('determine');
-	const [contractEtat, setContractEtat] = useState<'en_attente' | 'signe' | 'annule'>('en_attente');
-	const [contractDateSignature, setContractDateSignature] = useState(todayIso);
-	const [contractMontant, setContractMontant] = useState('');
-	const [contractConditions, setContractConditions] = useState<string[]>(['']);
-	const [contractDureeMois, setContractDureeMois] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [conversations, setConversations] = useState<BailleurConversation[]>([]);
+  const [contracts, setContracts] = useState<BailleurContrat[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState(requestedConversationId);
+  const [draft, setDraft] = useState('');
+
+  const [showContractForm, setShowContractForm] = useState(false);
+  const [contractType, setContractType] = useState<'determine' | 'indetermine'>('determine');
+  const [contractDateSignature, setContractDateSignature] = useState(new Date().toISOString().slice(0, 10));
+  const [contractMontant, setContractMontant] = useState('');
+  const [contractDureeMois, setContractDureeMois] = useState('12');
+	const [threadBienPhoto, setThreadBienPhoto] = useState<string | null>(null);
+	const [myDisplayName, setMyDisplayName] = useState('Bailleur');
+
+  const refresh = async () => {
+    try {
+      setLoading(true);
+      const [conversationsData, contractsData] = await Promise.all([
+        getBailleurConversations(),
+        getBailleurContrats(),
+      ]);
+      setConversations(conversationsData);
+      setContracts(contractsData);
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  useEffect(() => {
+    if (!requestedConversationId) return;
+    setSelectedConversationId(requestedConversationId);
+  }, [requestedConversationId]);
 
 	useEffect(() => {
-		setConversations(getConversationsForParticipant(CURRENT_BAILLEUR_ID));
-		const unsubscribe = subscribeBiens(() => setConversations(getConversationsForParticipant(CURRENT_BAILLEUR_ID)));
-		return unsubscribe;
+		let cancelled = false;
+
+		getAuthenticatedUser()
+			.then((user) => {
+				if (cancelled) return;
+				const fullName = [user.prenom ?? '', user.nom ?? ''].map((part) => part.trim()).filter(Boolean).join(' ');
+				setMyDisplayName(fullName || user.email || 'Bailleur');
+			})
+			.catch(() => {
+				if (!cancelled) setMyDisplayName('Bailleur');
+			});
+
+		return () => {
+			cancelled = true;
+		};
 	}, []);
 
-	useEffect(() => {
-		if (selectedConversationId && !conversations.some((item) => item.id === selectedConversationId)) {
-			setSelectedConversationId('');
-		}
-	}, [conversations, selectedConversationId]);
+  const selectedConversation = useMemo(
+    () => conversations.find((item) => item.id === selectedConversationId) ?? null,
+    [conversations, selectedConversationId],
+  );
+
+  const selectedContract = useMemo(
+    () => contracts.find((item) => item.conversationId === selectedConversation?.id) ?? null,
+    [contracts, selectedConversation?.id],
+  );
 
 	useEffect(() => {
-		if (!requestedConversationId) return;
-		setSelectedConversationId(requestedConversationId);
-	}, [requestedConversationId]);
+		let cancelled = false;
 
-	const selectedConversation = useMemo(
-		() => conversations.find((item) => item.id === selectedConversationId) ?? null,
-		[conversations, selectedConversationId],
-	);
-	const contractsForSelectedConversation = useMemo(
-		() => getAllContrats().filter((contract) => contract.conversationId === selectedConversation?.id),
-		[selectedConversation?.id, conversations],
-	);
-	const hasSignedContract = contractsForSelectedConversation.some((contract) => contract.etat === 'signe');
-	const hasPendingContract = contractsForSelectedConversation.some((contract) => contract.etat === 'en_attente');
-	const canEstablishContract = hasPendingContract || !hasSignedContract;
-
-	useEffect(() => {
 		if (!selectedConversation) {
-			setShowContractForm(false);
-			setEditingContractId(null);
-			return;
+			setThreadBienPhoto(null);
+			return undefined;
 		}
 
-		const relatedBien = getBienById(selectedConversation.bienId);
-		setEditingContractId(null);
-		setContractType('determine');
-		setContractEtat('en_attente');
-		setContractDateSignature(todayIso);
-		setContractMontant(String(relatedBien?.montant ?? ''));
-		setContractDureeMois('');
-		setContractConditions(['']);
-		setShowContractForm(false);
-	}, [selectedConversation, todayIso]);
+		getMyBiens()
+			.then((items) => {
+				if (cancelled) return;
+				const bien = items.find((item) => item.id === selectedConversation.bienId);
+				setThreadBienPhoto(bien?.image ?? selectedConversation.bienPhoto ?? null);
+			})
+			.catch(() => {
+				if (!cancelled) setThreadBienPhoto(selectedConversation.bienPhoto ?? null);
+			});
 
-	const resetContractForm = (contractId?: string | null) => {
-		if (!selectedConversation) return;
-		const relatedBien = getBienById(selectedConversation.bienId);
-		const existingContract = contractId ? getContratById(contractId, selectedConversation.bienId) : null;
-		const baseContract = existingContract ?? contractsForSelectedConversation.find((contract) => contract.etat === 'en_attente') ?? null;
-
-		setEditingContractId(baseContract?.id ?? null);
-		setContractType(baseContract?.typeContrat ?? 'determine');
-		setContractEtat('en_attente');
-		setContractDateSignature(baseContract?.dateSignature ?? todayIso);
-		setContractMontant(String(baseContract?.montant ?? relatedBien?.montant ?? ''));
-		setContractDureeMois(String(baseContract?.dureeMois ));
-		setContractConditions(baseContract ? baseContract.conditions.map((condition) => condition.description) : ['']);
-		setShowContractForm(true);
-	};
-
-	const handleSendMessage = () => {
-		if (!selectedConversation) return;
-		const ok = sendMessageToConversation(selectedConversation.id, draft);
-		if (!ok) {
-			// Alert.alert('Message vide', 'Renseignez un message avant l\'envoi.');
-			return;
-		}
-		setDraft('');
-	};
-
-	const handleToggleContractForm = () => {
-		if (showContractForm) {
-			setShowContractForm(false);
-			setEditingContractId(null);
-			return;
-		}
-
-		resetContractForm();
-	};
-
-	const updateCondition = (index: number, value: string) => {
-		setContractConditions((previous) => previous.map((item, currentIndex) => (currentIndex === index ? value : item)));
-	};
-
-	const addCondition = () => {
-		setContractConditions((previous) => [...previous, '']);
-	};
-
-	const removeCondition = (index: number) => {
-		setContractConditions((previous) => {
-			if (previous.length === 1) return [''];
-			return previous.filter((_, currentIndex) => currentIndex !== index);
-		});
-	};
-
-	const handleCreateContract = () => {
-		if (!selectedConversation) return;
-		if (!editingContractId && !canEstablishContract) {
-			Alert.alert('Contrat deja signe', 'Un contrat est deja signe pour cette conversation.');
-			return;
-		}
-		const relatedBien = getBienById(selectedConversation.bienId);
-		if (!relatedBien) {
-			Alert.alert('Bien introuvable', 'Impossible de retrouver le bien lie a cette conversation.');
-			return;
-		}
-
-		const parsedMontant = Number(contractMontant.replace(/\D/g, '')) || relatedBien.montant;
-		const parsedDuree = Number(contractDureeMois.replace(/\D/g, '')) || 12;
-		const cleanConditions = contractConditions.map((condition) => condition.trim()).filter(Boolean);
-
-		if (cleanConditions.length === 0) {
-			Alert.alert('Conditions requises', 'Ajoutez au moins une condition pour le contrat.');
-			return;
-		}
-
-		const payload = {
-			locataire: selectedConversation.locataireNom,
-			locataireId: selectedConversation.locataireId,
-			montant: parsedMontant,
-			dureeMois: parsedDuree,
-			conditions: cleanConditions,
-			signerMaintenant: false,
-			conversationId: selectedConversation.id,
-			typeContrat: contractType,
-			etat: contractEtat,
-			dateSignature: contractDateSignature,
+		return () => {
+			cancelled = true;
 		};
+	}, [selectedConversation]);
 
-		const ok = editingContractId
-			? updateContratForBien(relatedBien.id, editingContractId, payload)
-			: createContratForBien(relatedBien.id, payload);
+  const handleSendMessage = async () => {
+    if (!selectedConversation || !draft.trim()) return;
+    await sendBailleurMessage(selectedConversation.id, draft.trim());
+    setDraft('');
+    await refresh();
+  };
 
-		if (!ok) {
-			Alert.alert('Erreur', 'Le contrat n\'a pas pu etre etabli.');
+  const handleCreateContract = async () => {
+    if (!selectedConversation) return;
+		if (selectedConversation.participantRole !== 'locataire') {
+			Alert.alert('Action non autorisee', 'Vous ne pouvez etablir un contrat que pour un locataire.');
 			return;
 		}
+    if (selectedContract && selectedContract.etat === 'signe') {
+      Alert.alert('Contrat deja signe', 'Un contrat signe existe deja pour cette conversation.');
+      return;
+    }
 
-		Alert.alert('Contrat etabli', editingContractId ? 'Le contrat a ete modifie et renvoye au locataire.' : 'Le contrat a ete cree et envoye au locataire pour signature.');
-		setShowContractForm(false);
-		setEditingContractId(null);
-	};
+    const montant = Number(contractMontant.replace(/\D/g, ''));
+    const duree = Number(contractDureeMois.replace(/\D/g, ''));
 
-	const handleEditContract = (contractId: string) => {
-		resetContractForm(contractId);
-	};
+    if (!montant || !duree) {
+      Alert.alert('Champs invalides', 'Montant et duree sont obligatoires.');
+      return;
+    }
 
-	const handleCancelContract = (contractId: string) => {
-		if (!selectedConversation) return;
-		const ok = annulerContratForBien(selectedConversation.bienId, contractId);
-		if (!ok) {
-			Alert.alert('Annulation impossible', 'Le contrat ne peut plus etre annule.');
-			return;
-		}
-		if (editingContractId === contractId) {
-			setShowContractForm(false);
-			setEditingContractId(null);
-		}
-		Alert.alert('Contrat annule', 'Le contrat a ete annule avant la signature.');
-	};
+    await createBailleurContrat({
+      conversationId: selectedConversation.id,
+      typeContrat: contractType,
+      montant,
+      dureeMois: duree,
+      dateSignature: contractDateSignature,
+    });
 
-	const handleOpenConversation = (conversationId: string) => {
-		setSelectedConversationId(conversationId);
-		setDraft('');
-	};
+    setShowContractForm(false);
+    await refresh();
+    Alert.alert('Contrat cree', 'Le contrat a ete envoye au locataire.');
+  };
 
-	const handleBackToList = () => {
-		setSelectedConversationId('');
-		setDraft('');
-	};
+  const handleCancelContract = async () => {
+    if (!selectedContract) return;
 
-	if (selectedConversation) {
-		return (
+		const confirmed = Platform.OS === 'web'
+			? window.confirm('Confirmer l’annulation de ce contrat ? Il sera immédiatement marqué comme annulé.')
+			: true;
+
+		if (!confirmed) return;
+
+    await cancelBailleurContrat(selectedContract.id);
+    await refresh();
+    Alert.alert('Contrat annule', 'Le contrat a ete annule.');
+  };
+
+  if (selectedConversation) {
+    return (
 			<BailleurScreenShell
 				title="Messagerie"
-				subtitle={selectedConversation.locataireNom}
+				subtitle={selectedConversation.participantRole === 'locataire' ? selectedConversation.locataireNom : selectedConversation.participantRole === 'administrateur' ? 'Administrateur' : selectedConversation.locataireNom}
 				scrollEnabled={false}
 				contentStyle={styles.threadScreenContent}
 			>
-				<KleaCard style={styles.threadCard}>
-					<View style={styles.threadHeaderRow}>
-						<Pressable onPress={handleBackToList} style={styles.backButton}>
-							<Ionicons name="arrow-back" size={22} color={KleaColors.primary} />
-						</Pressable>
-						<Image source={profileImageSource} style={styles.threadProfileImage} />
-						<View style={styles.threadHeaderTextBlock}>
-							<Pressable onPress={() => router.push(`/bailleur/detail/${selectedConversation.bienId}` as any)}>
-								<Text style={styles.threadTitle}>{selectedConversation.bienTitre}</Text>
-							</Pressable>
-							<Text style={styles.metaLine}>Statut du contrat: {selectedConversation.statutContrat}</Text>
-						</View>
-					</View>
-
-					{canEstablishContract ? (
-						<KleaButton
-							title={showContractForm ? 'Annuler' : 'Etablir un contrat'}
-							icon="document-text-outline"
-							variant="secondary"
-							onPress={handleToggleContractForm}
-							style={styles.contractButton}
-						/>
-					) : (
-						<Text style={styles.contractLockedText}>Un contrat est deja signe pour cette conversation.</Text>
-					)}
-
-					{showContractForm ? (
-						<KleaCard style={styles.contractFormCard}>
-							<ScrollView style={styles.contractFormScroll} contentContainerStyle={styles.contractFormContent} showsVerticalScrollIndicator>
-								<Text style={styles.formTitle}>{editingContractId ? 'Modifier le contrat' : 'Formulaire de contrat'}</Text>
-								<Text style={styles.formHint}>Renseignez les champs puis envoyez le contrat au locataire pour signature.</Text>
-
-								<View style={styles.formField}>
-									<Text style={styles.formLabel}>Type de contrat</Text>
-									<View style={styles.pickerWrap}>
-										<Picker selectedValue={contractType} onValueChange={(value) => setContractType(value)} style={styles.picker}>
-											<Picker.Item label="Contrat à durée déterminée" value="determine" />
-											<Picker.Item label="Contrat à durée indéterminée" value="indetermine" />
-										</Picker>
-									</View>
-								</View>
-
-								<KleaInput label="Date de signature" value={contractDateSignature} onChangeText={setContractDateSignature} placeholder="YYYY-MM-DD" />
-								<KleaInput label="Montant du loyer" value={contractMontant} onChangeText={(value) => setContractMontant(value.replace(/\D/g, ''))} keyboardType="numeric" />
-								<KleaInput label="Etat" value="En attente" editable={false} style={styles.readonlyInput} />
-								<KleaInput label="Durée du contrat (mois)" value={contractDureeMois} onChangeText={(value) => setContractDureeMois(value.replace(/\D/g, ''))} keyboardType="numeric" />
-
-								<View style={styles.conditionsHeader}>
-									<Text style={styles.formLabel}>Conditions</Text>
-									<KleaButton title="Ajouter une condition" icon="add-outline" variant="ghost" onPress={addCondition} />
-								</View>
-
-								{contractConditions.map((condition, index) => (
-									<View key={`condition-${index}`} style={styles.conditionRow}>
-										<KleaInput
-											label={`Condition ${index + 1}`}
-											value={condition}
-											onChangeText={(value) => updateCondition(index, value)}
-											placeholder="Ex: Paiement avant le 5"
-										/>
-										<View style={styles.conditionActions}>
-											<KleaButton title="Supprimer" variant="ghost" onPress={() => removeCondition(index)} />
-										</View>
-									</View>
-								))}
-
-								<KleaButton title="Envoyer le contrat au locataire" icon="send-outline" onPress={handleCreateContract} />
-							</ScrollView>
-						</KleaCard>
-					) : null}
-
-					<ScrollView style={styles.messagesScroll} contentContainerStyle={styles.messagesColumn} showsVerticalScrollIndicator>
-						{selectedConversation.messages.map((message) => {
-							const isMine = message.auteurRole === 'bailleur';
-							const contract = message.type === 'contract' && message.contractId ? getContratById(message.contractId, selectedConversation.bienId) : null;
-							const canManageContract = Boolean(contract && contract.etat === 'en_attente');
-							return (
-								<View key={message.id} style={[styles.messageRow, isMine ? styles.messageRowMine : styles.messageRowOther]}>
-									<View style={[styles.messageBubble, isMine ? styles.messageBubbleMine : styles.messageBubbleOther]}>
-										<Text style={styles.messageAuthor}>{message.auteurNom}</Text>
-										{contract ? (
-											<View style={styles.contractMessageBody}>
-												<Text style={styles.messageContent}>{message.contenu}</Text>
-												<Text style={styles.contractMeta}>Type: {contract.typeContrat === 'indetermine' ? 'Contrat a duree indeterminee' : 'Contrat a duree determinee'}</Text>
-												<Text style={styles.contractMeta}>Etat: {contract.etat === 'en_attente' ? 'En attente' : contract.etat === 'signe' ? 'Signe' : 'Annule'}</Text>
-												<Text style={styles.contractMeta}>Date de signature: {contract.dateSignature}</Text>
-												<Text style={styles.contractMeta}>Loyer: {contract.montant.toLocaleString('fr-FR')} FCFA</Text>
-												{contract.conditions.length > 0 ? contract.conditions.map((condition, index) => (
-													<Text key={`${contract.id}-cond-${index}`} style={styles.contractCondition}>• {condition.description}</Text>
-												)) : null}
-												{canManageContract ? (
-													<View style={styles.contractActionRow}>
-														<KleaButton title="Modifier" variant="secondary" onPress={() => handleEditContract(contract.id)} style={styles.contractActionButton} />
-														<KleaButton title="Annuler" variant="ghost" onPress={() => handleCancelContract(contract.id)} style={styles.contractActionButton} />
-													</View>
-												) : null}
-											</View>
-										) : (
-											<>
-												<Text style={styles.messageContent}>{message.contenu}</Text>
-												<Text style={styles.messageDate}>{formatMessageDate(message.date)}</Text>
-											</>
-										)}
-									</View>
-								</View>
-							);
-						})}
-					</ScrollView>
-
-					<KleaInput
-						label=""
-						value={draft}
-						onChangeText={setDraft}
-						placeholder="Ecrivez un message "
-						multiline
-						numberOfLines={1}
-						style={styles.messageInput}
-					/>
-					<KleaButton title="Envoyer" onPress={handleSendMessage} disabled={!draft.trim()} />
-				</KleaCard>
-			</BailleurScreenShell>
-		);
-	}
-
-	return (
-		<BailleurScreenShell title="Messagerie" subtitle="">
-			<KleaCard style={styles.card}>
-				{conversations.length === 0 ? <Text style={styles.emptyText}>Aucune conversation disponible.</Text> : null}
-				{conversations.map((conversation) => {
-					return (
-							<Pressable key={conversation.id} style={styles.whatsappItem} onPress={() => handleOpenConversation(conversation.id)}>
-								<View style={styles.avatarCircle}>
-									<Image source={profileImageSource} style={styles.avatarImage} />
-								</View>
-								<View style={styles.whatsappBody}>
-									<View style={styles.whatsappHeaderRow}>
-										<Pressable onPress={() => router.push(`/bailleur/detail/${conversation.bienId}` as any)}>
-											<Text style={styles.conversationTitle}>{conversation.bienTitre}</Text>
+				<KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.threadKeyboardAvoiding}>
+					<KleaCard style={styles.threadCard}>
+						<View style={styles.threadBody}>
+							<ScrollView style={styles.threadScroll} contentContainerStyle={styles.threadScrollContent} showsVerticalScrollIndicator>
+								<View style={styles.threadHeaderRow}>
+									<Pressable onPress={() => setSelectedConversationId('')} style={styles.backButton}>
+										<Ionicons name="arrow-back" size={22} color={KleaColors.primary} />
+									</Pressable>
+									<Image source={threadBienPhoto ? resolveImageSource(threadBienPhoto) : require('../../assets/images/icon.png')} style={styles.threadProfileImage} />
+									<View style={styles.threadHeaderTextBlock}>
+										<Pressable onPress={() => router.push(`/bailleur/detail/${selectedConversation.bienId}` as any)}>
+											<Text style={styles.threadTitle}>{selectedConversation.bienTitre}</Text>
 										</Pressable>
-										<Text style={styles.dateText}>{formatMessageDate(conversation.lastMessageDate)}</Text>
+										<Text style={styles.metaLine}>{selectedConversation.participantRole === 'locataire' ? `Locataire: ${selectedConversation.locataireNom}` : selectedConversation.participantRole === 'administrateur' ? 'Interlocuteur: Administrateur' : `Interlocuteur: ${selectedConversation.locataireNom}`}</Text>
+										<Text style={styles.metaLine}>Statut contrat: {selectedContract?.etat ?? 'aucun'}</Text>
 									</View>
-									<Text style={styles.metaLine} numberOfLines={1}>{conversation.locataireNom}</Text>
-									<Text style={styles.previewText} numberOfLines={1}>{conversation.lastMessage}</Text>
 								</View>
-							</Pressable>
-					);
-				})}
-			</KleaCard>
-		</BailleurScreenShell>
-	);
+
+								{selectedConversation.participantRole === 'locataire' ? (
+									<KleaButton
+										title={showContractForm ? 'Fermer le formulaire' : 'Etablir un contrat'}
+										variant="secondary"
+										onPress={() => setShowContractForm((value) => !value)}
+										style={styles.contractButton}
+									/>
+								) : null}
+
+								{selectedConversation.participantRole === 'locataire' && selectedContract?.etat === 'en_attente' ? (
+									<KleaButton
+										title="Editer le contrat avant signature"
+										variant="secondary"
+										onPress={() => router.push(`/bailleur/nouveau_contrat?conversationId=${selectedConversation.id}&contratId=${selectedContract.id}` as any)}
+										style={styles.contractButton}
+									/>
+								) : null}
+
+								{selectedConversation.participantRole === 'locataire' && selectedContract?.etat === 'en_attente' ? (
+									<KleaButton title="Annuler le contrat en attente" variant="ghost" onPress={handleCancelContract} style={styles.contractButton} />
+								) : null}
+
+								{selectedConversation.participantRole === 'locataire' && showContractForm ? (
+									<KleaCard style={styles.contractFormCard}>
+										<View style={styles.formField}>
+											<Text style={styles.formLabel}>Type de contrat</Text>
+											<View style={styles.pickerWrap}>
+												<Picker selectedValue={contractType} onValueChange={(value) => setContractType(value)} style={styles.picker}>
+													<Picker.Item label="Contrat a duree determinee" value="determine" />
+													<Picker.Item label="Contrat a duree indeterminee" value="indetermine" />
+												</Picker>
+											</View>
+										</View>
+
+										<KleaInput label="Date de signature" value={contractDateSignature} onChangeText={setContractDateSignature} placeholder="YYYY-MM-DD" />
+										<KleaInput label="Montant du loyer" value={contractMontant} onChangeText={(value) => setContractMontant(value.replace(/\D/g, ''))} keyboardType="numeric" />
+										<KleaInput label="Duree (mois)" value={contractDureeMois} onChangeText={(value) => setContractDureeMois(value.replace(/\D/g, ''))} keyboardType="numeric" />
+										<KleaButton title="Envoyer le contrat" onPress={handleCreateContract} />
+									</KleaCard>
+								) : null}
+
+								<View style={styles.messagesList}>
+									{selectedConversation.messages.map((message) => {
+										const mine = message.auteurRole === 'bailleur';
+										const otherDisplayName = message.auteurRole === 'administrateur' ? 'Administrateur' : message.auteurNom;
+										return (
+											<View key={message.id} style={[styles.messageRow, mine ? styles.messageRowMine : styles.messageRowOther]}>
+												<View style={[styles.messageBubble, mine ? styles.messageBubbleMine : styles.messageBubbleOther]}>
+													<Text style={styles.messageAuthor}>{mine ? myDisplayName : otherDisplayName}</Text>
+													<Text style={styles.messageContent}>{message.contenu}</Text>
+													<Text style={styles.messageDate}>{formatMessageDate(message.date)}</Text>
+												</View>
+											</View>
+										);
+									})}
+								</View>
+							</ScrollView>
+
+							<View style={styles.composerRow}>
+								<KleaInput label="" value={draft} onChangeText={setDraft} placeholder="Ecrivez un message" multiline numberOfLines={1} style={styles.messageInput} />
+								<KleaButton title="Envoyer" onPress={handleSendMessage} disabled={!draft.trim()} style={styles.sendButton} />
+							</View>
+						</View>
+					</KleaCard>
+				</KeyboardAvoidingView>
+      </BailleurScreenShell>
+    );
+  }
+
+  return (
+    <BailleurScreenShell title="Messagerie" subtitle="">
+      <KleaCard style={styles.card}>
+        {loading ? <Text style={styles.emptyText}>Chargement...</Text> : null}
+        {!loading && conversations.length === 0 ? <Text style={styles.emptyText}>Aucune conversation disponible.</Text> : null}
+        {conversations.map((conversation) => (
+          <Pressable key={conversation.id} style={styles.whatsappItem} onPress={() => setSelectedConversationId(conversation.id)}>
+            <View style={styles.avatarCircle}>
+              <Image source={profileImageSource} style={styles.avatarImage} />
+            </View>
+            <View style={styles.whatsappBody}>
+              <View style={styles.whatsappHeaderRow}>
+                <Text style={styles.conversationTitle}>{conversation.bienTitre}</Text>
+                <Text style={styles.dateText}>{formatMessageDate(conversation.lastMessageDate)}</Text>
+              </View>
+              <Text style={styles.metaLine} numberOfLines={1}>{conversation.locataireNom}</Text>
+              <Text style={styles.previewText} numberOfLines={1}>{conversation.lastMessage}</Text>
+            </View>
+          </Pressable>
+        ))}
+      </KleaCard>
+    </BailleurScreenShell>
+  );
 }
 
 const styles = StyleSheet.create({
 	card: {
 		marginBottom: 4,
 	},
-	sectionTitle: {
-		color: KleaColors.secondary,
-		fontSize: 16,
-		fontWeight: '700',
-		marginBottom: 8,
-	},
-	sectionHint: {
-		color: KleaColors.textMuted,
-		fontSize: 13,
-		lineHeight: 19,
-		marginBottom: 10,
-	},
 	threadCard: {
 		marginBottom: 4,
 		flex: 1,
+		paddingBottom: 0,
+	},
+	threadBody: {
+		flex: 1,
+	},
+	threadScroll: {
+		flex: 1,
+	},
+	threadScrollContent: {
+		paddingBottom: 12,
 	},
 	contractFormCard: {
 		marginBottom: 10,
 	},
-	contractFormScroll: {
-		maxHeight: 300,
+	formField: {
+		marginBottom: 8,
 	},
-	contractFormContent: {
-		gap: 8,
-	},
-	formTitle: {
+	formLabel: {
 		color: KleaColors.secondary,
-		fontSize: 16,
+		fontSize: 13,
 		fontWeight: '700',
+		marginBottom: 4,
+	},
+	pickerWrap: {
+		borderWidth: 1,
+		borderColor: KleaColors.border,
+		borderRadius: 12,
+		overflow: 'hidden',
+	},
+	picker: {
+		height: 48,
+		color: KleaColors.primary,
+	},
+	contractButton: {
+		marginBottom: 8,
 	},
 	formHint: {
 		color: KleaColors.textMuted,
@@ -486,6 +413,10 @@ const styles = StyleSheet.create({
 		paddingVertical: 8,
 	},
 	threadScreenContent: {
+		flex: 1,
+		paddingBottom: 148,
+	},
+	threadKeyboardAvoiding: {
 		flex: 1,
 	},
 	contractButton: {
@@ -588,21 +519,22 @@ const styles = StyleSheet.create({
 		gap: 10,
 		flexGrow: 1,
 	},
-	messagesScroll: {
+	messagesList: {
 		flex: 1,
-		minHeight: 180,
+		minHeight: 280,
 	},
 	messageRow: {
 		width: '100%',
+		flexDirection: 'row',
 	},
 	messageRowMine: {
-		alignItems: 'flex-end',
+		justifyContent: 'flex-end',
 	},
 	messageRowOther: {
-		alignItems: 'flex-start',
+		justifyContent: 'flex-start',
 	},
 	messageBubble: {
-		width: '88%',
+		maxWidth: '88%',
 		borderRadius: 16,
 		paddingHorizontal: 12,
 		paddingVertical: 10,
@@ -633,7 +565,17 @@ const styles = StyleSheet.create({
 		marginTop: 8,
 	},
 	messageInput: {
+		flex: 1,
 		minHeight: 30,
 		textAlignVertical: 'top',
+	},
+	composerRow: {
+		flexDirection: 'row',
+		alignItems: 'flex-end',
+		gap: 10,
+		marginTop: 12,
+	},
+	sendButton: {
+		minWidth: 96,
 	},
 });

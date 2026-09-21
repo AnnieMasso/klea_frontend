@@ -7,13 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
 import {
-  getNotificationsForRecipient,
-  markAllNotificationsRead,
-  markNotificationRead,
-  subscribeBiens,
-  type AppNotification,
-  type NotificationType,
-} from '@/utils/biens-store';
+  getBailleurNotifications,
+  type BailleurNotification,
+} from '@/utils/bailleur-api';
 
 const semantic = {
   success: '#0F7048',
@@ -28,7 +24,7 @@ const semantic = {
 };
 
 const typeMeta: Record<
-  NotificationType,
+  BailleurNotification['type'],
   { icon: ComponentProps<typeof Ionicons>['name']; color: string; bg: string; actionLabel: string }
 > = {
   payment: { icon: 'card-outline', color: semantic.success, bg: semantic.successBg, actionLabel: 'Voir les paiements' },
@@ -64,16 +60,23 @@ const actions: Action[] = [
 export default function NotificationsScreen() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selected, setSelected] = useState<AppNotification | null>(null);
-  const [, forceRefresh] = useState(0);
+  const [selected, setSelected] = useState<BailleurNotification | null>(null);
+  const [items, setItems] = useState<BailleurNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    (async () => {
+      try {
+        setLoading(true);
+        setItems(await getBailleurNotifications());
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const items = getNotificationsForRecipient('bailleur-1');
-  const unreadCount = items.filter((item) => !item.read).length;
+  const unreadCount = items.filter((item) => !readIds.has(item.id)).length;
 
   const sections = useMemo(() => {
     const today = items.filter((item) => isToday(item.date));
@@ -84,11 +87,11 @@ export default function NotificationsScreen() {
     ];
   }, [items]);
 
-  const markAllAsRead = () => markAllNotificationsRead('bailleur-1');
+  const markAllAsRead = () => setReadIds(new Set(items.map((item) => item.id)));
 
-  const openDetail = (item: AppNotification) => {
+  const openDetail = (item: BailleurNotification) => {
     setSelected(item);
-    if (!item.read) markNotificationRead(item.id);
+    setReadIds((prev) => new Set(prev).add(item.id));
   };
 
   const hasNotifications = items.length > 0;
@@ -127,7 +130,11 @@ export default function NotificationsScreen() {
             )}
           </View>
 
-          {hasNotifications ? (
+          {loading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Chargement...</Text>
+            </View>
+          ) : hasNotifications ? (
             sections.map((section) =>
               section.data.length === 0 ? null : (
                 <View key={section.label} style={styles.section}>
@@ -142,7 +149,7 @@ export default function NotificationsScreen() {
                           </View>
                           <View style={styles.notifTextWrap}>
                             <View style={styles.notifTitleRow}>
-                              <Text style={[styles.notifTitle, !item.read && styles.notifTitleUnread]} numberOfLines={1}>
+                              <Text style={[styles.notifTitle, !readIds.has(item.id) && styles.notifTitleUnread]} numberOfLines={1}>
                                 {item.title}
                               </Text>
                               <Text style={styles.notifTime}>{new Date(item.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</Text>
@@ -151,7 +158,7 @@ export default function NotificationsScreen() {
                               {item.subtitle}
                             </Text>
                           </View>
-                          {!item.read && <View style={styles.notifDot} />}
+                          {!readIds.has(item.id) && <View style={styles.notifDot} />}
                           <Ionicons name="chevron-forward" size={18} color={KleaColors.textMuted} style={styles.notifChevron} />
                         </Pressable>
                       </KleaCard>

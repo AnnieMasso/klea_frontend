@@ -10,55 +10,79 @@ import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors } from '@/constants/theme';
 import { ensureLocataireVerifie } from '@/hooks/use-locataire-guard';
 import { getBienMapRegion, openBienDirections, parseBienCoordinates } from '@/utils/bien-location';
-import {
-    CURRENT_LOCATAIRE_ID,
-    CURRENT_LOCATAIRE_NOM,
-    createConversationForBien,
-    getBienById,
-    subscribeBiens,
-    type BienDetail,
-} from '@/utils/biens-store';
+import { createLocataireConversationForBien, getLocataireBienById, type LocataireBien } from '@/utils/locataire-api';
 
 export default function LocataireBienDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const bienId = typeof params.id === 'string' ? params.id : '';
 
-  const [bien, setBien] = useState<BienDetail | null>(() => (bienId ? getBienById(bienId) : null));
+  const [bien, setBien] = useState<LocataireBien | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sendingConversation, setSendingConversation] = useState(false);
 
   useEffect(() => {
-    if (!bienId) return;
-    setBien(getBienById(bienId));
-    const unsubscribe = subscribeBiens(() => setBien(getBienById(bienId)));
-    return unsubscribe;
+    if (!bienId) {
+      setLoading(false);
+      return;
+    }
+
+    let mounted = true;
+
+    getLocataireBienById(bienId)
+      .then((item) => {
+        if (!mounted) return;
+        setBien(item);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.');
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [bienId]);
 
   const coordinates = parseBienCoordinates(bien?.localisation);
   const mapRegion = getBienMapRegion(coordinates);
 
-  const handleSouscrire = () => {
+  const handleSouscrire = async () => {
     if (!bien) return;
     if (!ensureLocataireVerifie()) return;
-    const conversationId = createConversationForBien(
-      bien.id,
-      CURRENT_LOCATAIRE_ID,
-      CURRENT_LOCATAIRE_NOM,
-      `Bonjour, je souhaite souscrire au bien "${bien.titre}".`,
-    );
 
-    if (!conversationId) {
+    try {
+      setSendingConversation(true);
+      const conversationId = await createLocataireConversationForBien(
+        bien.id,
+        `Bonjour, je souhaite souscrire au bien "${bien.titre}".`,
+      );
+
+      Alert.alert('Demande envoyee', 'Votre demande de souscription a ete envoyee au bailleur.');
+      router.push(`/locataire/conversation?conversationId=${conversationId}` as any);
+    } catch (error) {
       Alert.alert('Erreur', 'Impossible d\'envoyer votre demande pour le moment.');
-      return;
+    } finally {
+      setSendingConversation(false);
     }
-
-    Alert.alert('Demande envoyee', 'Votre demande de souscription a ete envoyee au bailleur.');
-    router.push(`/locataire/conversation?conversationId=${conversationId}` as any);
   };
 
   const handleOpenDirections = async () => {
     if (!coordinates || !bien) return;
     await openBienDirections(coordinates, bien.titre);
   };
+
+  if (loading) {
+    return (
+      <LocataireScreenShell title="Detail du bien" subtitle="Chargement..." contentStyle={styles.safeAreaContent}>
+        <KleaCard><Text style={styles.emptyText}>Chargement du bien...</Text></KleaCard>
+      </LocataireScreenShell>
+    );
+  }
 
   if (!bien) {
     return (
@@ -85,7 +109,7 @@ export default function LocataireBienDetailScreen() {
         <Text style={styles.line}>Salles de bain: {bien.nbSalles}</Text>
         <Text style={styles.line}>Adresse: {bien.adresse}</Text>
         <Text style={styles.line}>Ville: {bien.ville ?? '-'}</Text>
-        <Text style={styles.line}>Pays: {bien.pays ?? bien.quartier ?? '-'}</Text>
+        <Text style={styles.line}>Pays: {bien.pays ?? '-'}</Text>
       </KleaCard>
 
       <KleaCard style={styles.card}>
@@ -116,7 +140,12 @@ export default function LocataireBienDetailScreen() {
       </KleaCard>
 
       {bien.occupationStatut !== 'en_location' ? (
-        <KleaButton title="Converser avec le propriétaire" onPress={handleSouscrire} style={styles.actionButton} />
+        <KleaButton
+          title={sendingConversation ? 'Envoi en cours...' : 'Converser avec le propriétaire'}
+          onPress={handleSouscrire}
+          disabled={sendingConversation}
+          style={styles.actionButton}
+        />
       ) : (
         <Text style={styles.restrictedText}>Ce bien est deja en location.</Text>
       )}

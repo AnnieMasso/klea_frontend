@@ -1,8 +1,10 @@
 import { Image } from 'expo-image';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function HomeScreen() {
+  const router = useRouter();
+
   return (
     <View style={styles.container}>
       <Image
@@ -17,7 +19,7 @@ export default function HomeScreen() {
           <View style={styles.heroCard}>
             <View style={styles.logoBlock}>
               <Image
-                source={require('@/assets/images/klea-logo-horizontal-color.svg')}
+                source={require('@/assets/images/klea-icon-app.svg')}
                 style={styles.logo}
                 contentFit="contain"
               />
@@ -30,17 +32,13 @@ export default function HomeScreen() {
               </Text>
 
               <View style={styles.actions}>
-                <Link href="/register" asChild>
-                  <Pressable style={styles.primaryButton}>
-                    <Text style={styles.primaryButtonText}>Créer un compte</Text>
-                  </Pressable>
-                </Link>
+                <Pressable style={styles.primaryButton} onPress={() => router.push('/register')}>
+                  <Text style={styles.primaryButtonText}>Créer un compte</Text>
+                </Pressable>
 
-                <Link href="/login" asChild>
-                  <Pressable style={styles.secondaryButton}>
-                    <Text style={styles.secondaryButtonText}>Se connecter</Text>
-                  </Pressable>
-                </Link>
+                <Pressable style={styles.secondaryButton} onPress={() => router.push('/login')}>
+                  <Text style={styles.secondaryButtonText}>Se connecter</Text>
+                </Pressable>
               </View>
             </View>
           </View>

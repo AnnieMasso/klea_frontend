@@ -1,13 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import { Link } from 'expo-router';
-import React, { useState, type ComponentProps } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Link, Redirect } from 'expo-router';
+import React, { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaHeader } from '@/components/ui/klea-header';
 import { KleaColors } from '@/constants/theme';
+import {
+  getBailleurConversations,
+  getBailleurContrats,
+  getBailleurDeparts,
+  getBailleurPaiements,
+  getBailleurSinistres,
+  getAuthenticatedUser,
+  getMyBiens,
+  type BailleurBien,
+  type BailleurConversation,
+  type BailleurContrat,
+  type BailleurDepart,
+  type BailleurPaiement,
+  type BailleurSinistre,
+} from '@/utils/bailleur-api';
+import { buildUserDashboardPath } from '@/utils/user-route';
 
 type Action = {
   title: string;
@@ -15,7 +31,7 @@ type Action = {
   icon: ComponentProps<typeof Ionicons>['name'];
   href: string;
 };
- 
+
 type MonthStat = {
   key: string;
   label: string;
@@ -25,12 +41,40 @@ type MonthStat = {
   messages: number;
 };
 
-const monthStats: MonthStat[] = [
-  { key: '2026-07', label: 'Juillet 2026', signalements: 2, departs: 0, paiements: 5, messages: 8 },
-  { key: '2026-06', label: 'Juin 2026', signalements: 1, departs: 1, paiements: 7, messages: 4 },
-  { key: '2026-05', label: 'Mai 2026', signalements: 3, departs: 2, paiements: 6, messages: 5 },
-];
+function getMonthKey(dateValue: string): string {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown';
+  }
 
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthLabel(monthKey: string): string {
+  if (monthKey === 'unknown') {
+    return 'Inconnu';
+  }
+
+  const [year, month] = monthKey.split('-').map((value) => Number(value));
+  const date = new Date(year, month - 1, 1);
+
+  return new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' })
+    .format(date)
+    .replace(/^./, (character) => character.toUpperCase());
+}
+
+function buildRecentMonthKeys(count = 3): string[] {
+  const now = new Date();
+  const keys: string[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+    keys.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  return keys;
+}
+ 
 const actions: Action[] = [
   { title: 'Tableau de bord', subtitle: 'Accueil du bailleur', icon: 'speedometer-outline', href: '/bailleur' },
   { title: 'Gérer mes biens', subtitle: 'Ajouter, modifier ou valider un bien', icon: 'home-outline', href: '/bailleur/mes_biens' },
@@ -43,13 +87,98 @@ const actions: Action[] = [
 
 ];
 
-export default function BailleurDashboard() {
+export function BailleurDashboardView() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(monthStats[0].key);
-  const occupancyRate = 92;
-  const occupiedUnits = 18;
-  const totalUnits = 20;
-  const currentMonthData = monthStats.find((month) => month.key === selectedMonth) ?? monthStats[0];
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [biens, setBiens] = useState<BailleurBien[]>([]);
+  const [contrats, setContrats] = useState<BailleurContrat[]>([]);
+  const [paiements, setPaiements] = useState<BailleurPaiement[]>([]);
+  const [conversations, setConversations] = useState<BailleurConversation[]>([]);
+  const [sinistres, setSinistres] = useState<BailleurSinistre[]>([]);
+  const [departs, setDeparts] = useState<BailleurDepart[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    Promise.allSettled([
+      getMyBiens(),
+      getBailleurContrats(),
+      getBailleurPaiements(),
+      getBailleurConversations(),
+      getBailleurSinistres(),
+      getBailleurDeparts(),
+    ])
+      .then(([biensResult, contratsResult, paiementsResult, conversationsResult, sinistresResult, departsResult]) => {
+        if (!mounted) return;
+
+        const nextBiens = biensResult.status === 'fulfilled' ? biensResult.value : [];
+        const nextContrats = contratsResult.status === 'fulfilled' ? contratsResult.value : [];
+        const nextPaiements = paiementsResult.status === 'fulfilled' ? paiementsResult.value : [];
+        const nextConversations = conversationsResult.status === 'fulfilled' ? conversationsResult.value : [];
+        const nextSinistres = sinistresResult.status === 'fulfilled' ? sinistresResult.value : [];
+        const nextDeparts = departsResult.status === 'fulfilled' ? departsResult.value : [];
+
+        setBiens(nextBiens);
+        setContrats(nextContrats);
+        setPaiements(nextPaiements);
+        setConversations(nextConversations);
+        setSinistres(nextSinistres);
+        setDeparts(nextDeparts);
+
+        const firstMonthKey = buildRecentMonthKeys(3)[0] ?? '';
+        setSelectedMonth((current) => current || firstMonthKey);
+
+        const hasFailure = [biensResult, contratsResult, paiementsResult, conversationsResult, sinistresResult, departsResult].some((result) => result.status === 'rejected');
+        setLoadError(hasFailure ? 'Certaines données n ont pas pu etre chargees.' : null);
+        if (hasFailure) {
+          Alert.alert('Attention', 'Certaines données du tableau de bord n ont pas pu etre chargees.');
+        }
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const totalUnits = biens.length;
+  const occupiedUnits = biens.filter((item) => item.occupationStatut === 'en_location').length;
+  const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+  const monthlyRevenue = paiements.reduce((total, payment) => total + payment.montant, 0);
+  const alerts = sinistres.length + departs.length + contrats.length;
+  const actifs = biens.filter((item) => item.validationStatut === 'verifie').length;
+  const contratsEnCours = contrats.filter((contract) => contract.etat === 'signe' || contract.etat === 'en_attente').length;
+
+  const monthKeys = useMemo(() => buildRecentMonthKeys(3), []);
+  const monthStats = useMemo<MonthStat[]>(() => {
+    const messagesByMonth = new Map<string, number>();
+
+    conversations.forEach((conversation) => {
+      conversation.messages.forEach((message) => {
+        const key = getMonthKey(message.date);
+        messagesByMonth.set(key, (messagesByMonth.get(key) ?? 0) + 1);
+      });
+    });
+
+    return monthKeys.map((key) => ({
+      key,
+      label: formatMonthLabel(key),
+      signalements: sinistres.filter((sinistre) => getMonthKey(sinistre.date) === key).length,
+      departs: departs.filter((departure) => getMonthKey(departure.dateSignalement) === key).length,
+      paiements: paiements.filter((payment) => getMonthKey(payment.datePaiement) === key).length,
+      messages: messagesByMonth.get(key) ?? 0,
+    }));
+  }, [conversations, departs, monthKeys, paiements, sinistres]);
+
+  const currentMonthData = useMemo(
+    () => monthStats.find((month) => month.key === selectedMonth) ?? monthStats[0] ?? null,
+    [monthStats, selectedMonth],
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -78,6 +207,16 @@ export default function BailleurDashboard() {
             }
           />
 
+          {loading ? (
+            <KleaCard style={styles.loadingCard}>
+              <Text style={styles.loadingText}>Chargement des données réelles...</Text>
+            </KleaCard>
+          ) : loadError ? (
+            <KleaCard style={styles.loadingCard}>
+              <Text style={styles.loadingText}>{loadError}</Text>
+            </KleaCard>
+          ) : null}
+
           <View style={styles.highlightSection}>
             <View style={styles.highlightColumn}>
               <KleaCard style={styles.highlightCard}>
@@ -96,14 +235,14 @@ export default function BailleurDashboard() {
                   <Ionicons name="cash-outline" size={20} color={KleaColors.secondary} />
                   <Text style={styles.highlightLabel}>Revenus du mois</Text>
                 </View>
-                <Text style={styles.highlightValue}>{'334 000 FCFA'}</Text>
+                <Text style={styles.highlightValue}>{monthlyRevenue.toLocaleString('fr-FR')} FCFA</Text>
               </KleaCard>
               <KleaCard style={styles.highlightCard}>
                 <View style={styles.highlightHeader}>
                   <Ionicons name="alert-circle-outline" size={20} color={KleaColors.secondary} />
                   <Text style={styles.highlightLabel}>Alertes</Text>
                 </View>
-                <Text style={[styles.highlightValue, styles.highlightAlertValue]}>3</Text>
+                <Text style={[styles.highlightValue, styles.highlightAlertValue]}>{alerts}</Text>
               </KleaCard>
             </View>
           </View>
@@ -114,14 +253,14 @@ export default function BailleurDashboard() {
                 <Ionicons name="home-outline" size={18} color={KleaColors.secondary} />
                 <Text style={styles.summaryLabel}>Biens actifs</Text>
               </View>
-              <Text style={styles.summaryValue}>12</Text>
+              <Text style={styles.summaryValue}>{actifs}</Text>
             </KleaCard>
             <KleaCard style={[styles.summaryCard, styles.summaryCardLast]}>
               <View style={styles.summaryHeader}>
                 <Ionicons name="document-text-outline" size={18} color={KleaColors.secondary} />
                 <Text style={styles.summaryLabel}>Contrats en cours</Text>
               </View>
-              <Text style={styles.summaryValue}>7</Text>
+              <Text style={styles.summaryValue}>{contratsEnCours}</Text>
             </KleaCard>
           </View>
 
@@ -131,14 +270,14 @@ export default function BailleurDashboard() {
                 <Ionicons name="alert-circle-outline" size={18} color={KleaColors.secondary} />
                 <Text style={styles.summaryLabel}>Sinistres</Text>
               </View>
-              <Text style={styles.summaryValue}>3</Text>
+              <Text style={styles.summaryValue}>{sinistres.length}</Text>
             </KleaCard>
             <KleaCard style={[styles.summaryCard, styles.summaryCardLast]}>
               <View style={styles.summaryHeader}>
                 <Ionicons name="log-out-outline" size={18} color={KleaColors.secondary} />
                 <Text style={styles.summaryLabel}>Départs</Text>
               </View>
-              <Text style={styles.summaryValue}>1</Text>
+              <Text style={styles.summaryValue}>{departs.length}</Text>
             </KleaCard>
           </View>
 
@@ -148,14 +287,14 @@ export default function BailleurDashboard() {
                 <Ionicons name="card-outline" size={18} color={KleaColors.secondary} />
                 <Text style={styles.summaryLabel}>Paiements reçus</Text>
               </View>
-              <Text style={styles.summaryValue}>5</Text>
+              <Text style={styles.summaryValue}>{paiements.length}</Text>
             </KleaCard>
             <KleaCard style={[styles.summaryCard, styles.summaryCardLast]}>
               <View style={styles.summaryHeader}>
                 <Ionicons name="chatbubble-ellipses-outline" size={18} color={KleaColors.secondary} />
                 <Text style={styles.summaryLabel}>Conversations</Text>
               </View>
-              <Text style={styles.summaryValue}>12</Text>
+              <Text style={styles.summaryValue}>{conversations.length}</Text>
             </KleaCard>
           </View>
 
@@ -180,19 +319,19 @@ export default function BailleurDashboard() {
               <View style={styles.monthlyStats}>
                 <View style={styles.monthlyStat}>
                   <Text style={styles.monthlyStatLabel}>Signalements</Text>
-                  <Text style={styles.monthlyStatValue}>{currentMonthData.signalements}</Text>
+                  <Text style={styles.monthlyStatValue}>{currentMonthData?.signalements ?? 0}</Text>
                 </View>
                 <View style={styles.monthlyStat}>
                   <Text style={styles.monthlyStatLabel}>Départs</Text>
-                  <Text style={styles.monthlyStatValue}>{currentMonthData.departs}</Text>
+                  <Text style={styles.monthlyStatValue}>{currentMonthData?.departs ?? 0}</Text>
                 </View>
                 <View style={styles.monthlyStat}>
                   <Text style={styles.monthlyStatLabel}>Paiements</Text>
-                  <Text style={styles.monthlyStatValue}>{currentMonthData.paiements}</Text>
+                  <Text style={styles.monthlyStatValue}>{currentMonthData?.paiements ?? 0}</Text>
                 </View>
                 <View style={styles.monthlyStat}>
                   <Text style={styles.monthlyStatLabel}>Messages</Text>
-                  <Text style={styles.monthlyStatValue}>{currentMonthData.messages}</Text>
+                  <Text style={styles.monthlyStatValue}>{currentMonthData?.messages ?? 0}</Text>
                 </View>
               </View>
             </KleaCard>
@@ -250,6 +389,42 @@ export default function BailleurDashboard() {
   );
 }
 
+export default function BailleurDashboard() {
+  const [targetPath, setTargetPath] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getAuthenticatedUser()
+      .then((user) => {
+        if (!mounted) return;
+        setTargetPath(buildUserDashboardPath(user));
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setTargetPath('/bailleur');
+      })
+      .finally(() => {
+        if (mounted) setChecked(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!checked) {
+    return null;
+  }
+
+  if (targetPath && targetPath !== '/bailleur') {
+    return <Redirect href={targetPath as any} />;
+  }
+
+  return <BailleurDashboardView />;
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -257,6 +432,13 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  loadingCard: {
+    marginBottom: 12,
+  },
+  loadingText: {
+    color: KleaColors.textMuted,
+    fontSize: 13,
   },
   content: {
     paddingTop: 24,

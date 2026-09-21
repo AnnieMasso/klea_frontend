@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
+import { getLocataireAuthUser } from '@/utils/locataire-api';
 
 const semantic = {
   success: '#0F7048',
@@ -29,13 +31,13 @@ type LocataireProfile = {
 };
 
 const initialProfile: LocataireProfile = {
-  nom: 'Ndzi',
-  prenom: 'Brigitte',
-  email: 'brigitte.ndzi@example.com',
-  statut: true,
-  cniRecto: 'cni_recto.jpg',
-  cniVerso: 'cni_verso.jpg',
-  assuranceHabitation: 'Assurance_Brigitte_Ndzi_AXA_2026.pdf',
+  nom: '',
+  prenom: '',
+  email: '',
+  statut: false,
+  cniRecto: '',
+  cniVerso: '',
+  assuranceHabitation: '',
 };
 
 type DocKey = 'cniRecto' | 'cniVerso';
@@ -45,6 +47,7 @@ export default function LocataireProfileScreen() {
   const [form, setForm] = useState(initialProfile);
   const [isEditing, setIsEditing] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' });
@@ -56,6 +59,39 @@ export default function LocataireProfileScreen() {
 
   const initials = `${profile.prenom.charAt(0)}${profile.nom.charAt(0)}`.toUpperCase();
   const canDelete = deleteConfirmMdp !== '';
+
+  useEffect(() => {
+    let mounted = true;
+
+    getLocataireAuthUser()
+      .then((user) => {
+        if (!mounted) return;
+
+        const nextProfile: LocataireProfile = {
+          nom: user.nom ?? '',
+          prenom: user.prenom ?? '',
+          email: user.email ?? '',
+          statut: user.statut === 'actif',
+          cniRecto: user.cni_recto ?? '',
+          cniVerso: user.cni_verso ?? '',
+          assuranceHabitation: user.assurance_habitation ?? '',
+        };
+
+        setProfile(nextProfile);
+        setForm(nextProfile);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement du profil impossible.');
+      })
+      .finally(() => {
+        if (mounted) setLoadingProfile(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const docLabels: Record<DocKey, string> = {
     cniRecto: 'CNI recto',
@@ -113,6 +149,19 @@ export default function LocataireProfileScreen() {
     }
   };
 
+  const pickFileDoc = async (field: 'assuranceHabitation') => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+    });
+
+    if (!result.canceled && result.assets?.[0]?.name) {
+      const name = result.assets[0].name;
+      setForm((prev) => ({ ...prev, [field]: name }));
+      setProfile((prev) => ({ ...prev, [field]: name }));
+    }
+  };
+
   const validatePassword = () => {
     const nextErrors: Record<string, string> = {};
     if (!passwordForm.current.trim()) nextErrors.current = 'Mot de passe actuel requis.';
@@ -157,6 +206,27 @@ export default function LocataireProfileScreen() {
         : { label: 'Vérification en cours', icon: 'time-outline' as const, color: semantic.warning, bg: semantic.warningBg },
     [profile.statut],
   );
+
+  if (loadingProfile) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          <View style={styles.headerBar}>
+            <Pressable onPress={() => router.back()} hitSlop={10} style={styles.headerBtn}>
+              <Ionicons name="chevron-back" size={24} color={KleaColors.primary} />
+            </Pressable>
+            <Text style={styles.headerTitle}>Mon profil</Text>
+            <View style={styles.headerBtn} />
+          </View>
+          <View style={styles.content}>
+            <KleaCard style={styles.card}>
+              <Text style={styles.emptyStateText}>Chargement du profil...</Text>
+            </KleaCard>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -257,7 +327,7 @@ export default function LocataireProfileScreen() {
 
           <Text style={styles.sectionTitle}>Assurance habitation</Text>
           <KleaCard style={styles.card}>
-            <DocRow label="Assurance habitation" fileName={profile.assuranceHabitation} onReplace={() => pickPhotoDoc('cniRecto')} isFile />
+            <DocRow label="Assurance habitation" fileName={profile.assuranceHabitation} onReplace={() => pickFileDoc('assuranceHabitation')} isFile />
           </KleaCard>
 
           <Text style={styles.sectionTitle}>Sécurité</Text>

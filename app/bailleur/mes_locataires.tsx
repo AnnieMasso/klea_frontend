@@ -7,7 +7,7 @@ import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { ReauthGate } from '@/components/ui/reauth-gate';
 import { KleaColors } from '@/constants/theme';
-import { getAllAnciensLocataires, subscribeBiens } from '@/utils/biens-store';
+import { getBailleurLocataires, type BailleurLocataire } from '@/utils/bailleur-api';
 
 type DisplayMode = 'date' | 'bien' | 'locataire';
 
@@ -22,14 +22,20 @@ export default function MesLocatairesScreen() {
 				? 'bien'
 				: 'locataire';
 
-	const [items, setItems] = useState(() => getAllAnciensLocataires());
+	const [items, setItems] = useState<BailleurLocataire[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [displayMode, setDisplayMode] = useState<DisplayMode>(initialMode);
 	const [bienFilter, setBienFilter] = useState(initialBienId);
 
 	useEffect(() => {
-		setItems(getAllAnciensLocataires());
-		const unsubscribe = subscribeBiens(() => setItems(getAllAnciensLocataires()));
-		return unsubscribe;
+		(async () => {
+			try {
+				setLoading(true);
+				setItems(await getBailleurLocataires());
+			} finally {
+				setLoading(false);
+			}
+		})();
 	}, []);
 
 	useEffect(() => {
@@ -42,7 +48,7 @@ export default function MesLocatairesScreen() {
 		const filtered = bienFilter ? items.filter((item) => item.bienId === bienFilter) : items;
 		const clone = [...filtered];
 		if (displayMode === 'date') {
-			return clone.sort((a, b) => Date.parse(b.dateReference || '') - Date.parse(a.dateReference || ''));
+			return clone.sort((a, b) => new Date(b.dateDebut || '').getTime() - new Date(a.dateDebut || '').getTime());
 		}
 		if (displayMode === 'bien') {
 			return clone.sort((a, b) => a.bienTitre.localeCompare(b.bienTitre, 'fr', { sensitivity: 'base' }));
@@ -61,7 +67,11 @@ export default function MesLocatairesScreen() {
 					</View>
 				</KleaCard>
 
-				{filteredAndSorted.length === 0 ? (
+				{loading ? (
+					<KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+				) : null}
+
+				{!loading && filteredAndSorted.length === 0 ? (
 					<KleaCard><Text style={styles.emptyText}>Aucun ancien locataire.</Text></KleaCard>
 				) : null}
 
@@ -73,15 +83,12 @@ export default function MesLocatairesScreen() {
 						<Text style={styles.line}>Telephone: {item.telephone}</Text>
 						<Text style={styles.line}>Email: {item.email}</Text>
 						<View style={styles.actionsColumn}>
-							{item.statut === 'actuel' ? (
-								<KleaButton
-									title="Voir son assurance habitation"
-									variant="secondary"
-									onPress={() => router.push(`/bailleur/assurance/${item.id}?bienId=${item.bienId}` as any)}
-								/>
-							) : (
-								<Text style={styles.restrictedText}>Acces à l'assurance indisponible pour un locataire ancien.</Text>
-							)}
+							<Text style={styles.restrictedText}>L'assurance habitation n'est pas exposée dans cet espace bailleur.</Text>
+							<KleaButton
+								title="Voir sa CNI"
+								variant="secondary"
+								onPress={() => router.push(`/bailleur/cni/${item.id}?bienId=${item.bienId}` as any)}
+							/>
 							<KleaButton title="Voir detail bien" variant="secondary" onPress={() => router.push(`/bailleur/detail/${item.bienId}` as any)} />
 						</View>
 					</KleaCard>

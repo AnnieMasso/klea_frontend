@@ -9,21 +9,37 @@ import { KleaInput } from '@/components/ui/klea-input';
 import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors, KleaRadius } from '@/constants/theme';
 import { ensureLocataireVerifie } from '@/hooks/use-locataire-guard';
-import { CURRENT_BAILLEUR_ID, CURRENT_LOCATAIRE_ID, createSignalementUtilisateur, getSignalementsForAuteur, subscribeBiens } from '@/utils/biens-store';
+import { createLocataireSignalement, getLocataireSignalements, getLocataireVisibleBiens, type LocataireSignalement } from '@/utils/locataire-api';
 import { resolveImageSource } from '@/utils/local-photos';
 
 export default function LocataireSignalementScreen() {
-  const [, forceRefresh] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [motif, setMotif] = useState('');
   const [preuve1, setPreuve1] = useState('');
   const [preuve2, setPreuve2] = useState('');
+  const [signalementsEffectues, setSignalementsEffectues] = useState<LocataireSignalement[]>([]);
+  const [defaultAccuseId, setDefaultAccuseId] = useState<string>('');
+
+  const refresh = async () => {
+    try {
+      setLoading(true);
+      const [signalements, conversations] = await Promise.all([
+        getLocataireSignalements(),
+        getLocataireVisibleBiens(),
+      ]);
+      setSignalementsEffectues(signalements.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)));
+      const firstBien = conversations[0];
+      if (firstBien?.bailleurId) {
+        setDefaultAccuseId(firstBien.bailleurId);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    refresh();
   }, []);
-
-  const signalementsEffectues = getSignalementsForAuteur(CURRENT_LOCATAIRE_ID);
 
   const pickPreuve = async (setter: (uri: string) => void) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -40,26 +56,29 @@ export default function LocataireSignalementScreen() {
     }
   };
 
-  const handleSubmit = () => {
-    if (!ensureLocataireVerifie()) return;
+  const handleSubmit = async () => {
+    if (!(await ensureLocataireVerifie())) return;
     if (!motif.trim()) {
       Alert.alert('Motif requis', 'Veuillez decrire le motif de votre signalement.');
       return;
     }
-    const ok = createSignalementUtilisateur(
-      CURRENT_LOCATAIRE_ID,
-      CURRENT_BAILLEUR_ID,
-      'bailleur',
-      motif.trim(),
-      preuve1 || undefined,
-      preuve2 || undefined,
-    );
-    if (ok) {
-      Alert.alert('Signalement envoye', 'Votre signalement a ete transmis.');
-      setMotif('');
-      setPreuve1('');
-      setPreuve2('');
+    if (!defaultAccuseId) {
+      Alert.alert('Accuse introuvable', 'Impossible de retrouver un bailleur lie a votre dossier.');
+      return;
     }
+
+    await createLocataireSignalement({
+      accuseId: defaultAccuseId,
+      motif: motif.trim(),
+      preuve1Uri: preuve1 || undefined,
+      preuve2Uri: preuve2 || undefined,
+    });
+
+    Alert.alert('Signalement envoye', 'Votre signalement a ete transmis.');
+    setMotif('');
+    setPreuve1('');
+    setPreuve2('');
+    await refresh();
   };
 
   return (
@@ -98,7 +117,11 @@ export default function LocataireSignalementScreen() {
       </KleaCard>
 
       <Text style={styles.sectionTitle}>Mes signalements effectues</Text>
-      {signalementsEffectues.length === 0 ? (
+      {loading ? (
+        <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+      ) : null}
+
+      {!loading && signalementsEffectues.length === 0 ? (
         <KleaCard><Text style={styles.emptyText}>Aucun signalement effectue pour le moment.</Text></KleaCard>
       ) : null}
 

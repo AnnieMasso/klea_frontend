@@ -8,29 +8,43 @@ import { KleaCard } from '@/components/ui/klea-card';
 import { KleaInput } from '@/components/ui/klea-input';
 import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors, KleaRadius } from '@/constants/theme';
-import { CURRENT_LOCATAIRE_ID, addPaiement, getAllPaiements, getContratsForLocataire, subscribeBiens } from '@/utils/biens-store';
 import { ensureLocataireVerifie } from '@/hooks/use-locataire-guard';
+import {
+  createLocatairePaiement,
+  getLocataireContrats,
+  getLocatairePaiements,
+  type LocataireContrat,
+  type LocatairePaiement,
+} from '@/utils/locataire-api';
 
 const modesPaiement = ['Mobile Money', 'Orange Money'];
 
 export default function LocatairePaiementsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ contratId?: string }>();
-  const [refreshTick, forceRefresh] = useState(0);
+
+  const [loading, setLoading] = useState(true);
+  const [contratsSignes, setContratsSignes] = useState<LocataireContrat[]>([]);
+  const [paiements, setPaiements] = useState<LocatairePaiement[]>([]);
+
   const [selectedContratId, setSelectedContratId] = useState('');
   const [montant, setMontant] = useState('');
   const [modePaiement, setModePaiement] = useState(modesPaiement[0]);
-  const [code, setCode] = useState('');
+
+  const refresh = () => {
+    setLoading(true);
+    return Promise.all([getLocataireContrats(), getLocatairePaiements()])
+      .then(([contrats, paiementsList]) => {
+        setContratsSignes(contrats.filter((contract) => contract.etat === 'signe'));
+        setPaiements(paiementsList);
+      })
+      .catch((error) => Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.'))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    const unsubscribe = subscribeBiens(() => forceRefresh((value) => value + 1));
-    return unsubscribe;
+    refresh();
   }, []);
-
-  const contratsSignes = useMemo(
-    () => getContratsForLocataire(CURRENT_LOCATAIRE_ID).filter((contract) => contract.etat === 'signe'),
-    [refreshTick],
-  );
 
   useEffect(() => {
     if (selectedContratId) return;
@@ -48,35 +62,47 @@ export default function LocatairePaiementsScreen() {
     if (contratSelectionne) setMontant(String(contratSelectionne.montant));
   }, [contratSelectionne?.id]);
 
-  const paiements = useMemo(
-    () => getAllPaiements().filter((payment) => payment.contratId === contratSelectionne?.id),
-    [contratSelectionne?.id, refreshTick],
+  const paiementsContrat = useMemo(
+    () => paiements.filter((payment) => payment.contratId === contratSelectionne?.id),
+    [contratSelectionne?.id, paiements],
   );
 
-  const handlePayer = () => {
+  const handlePayer = async () => {
     if (!contratSelectionne) return;
-    if (!ensureLocataireVerifie()) return;
+    if (!(await ensureLocataireVerifie())) return;
+
     const parsedMontant = Number(montant.replace(/\D/g, ''));
     if (!parsedMontant) {
       Alert.alert('Montant invalide', 'Veuillez indiquer un montant valide.');
       return;
     }
-    const ok = addPaiement(contratSelectionne.bienId, contratSelectionne.id, { montant: parsedMontant, modePaiement });
-    if (ok) {
+
+    try {
+      await createLocatairePaiement(contratSelectionne.id, parsedMontant, modePaiement);
       Alert.alert('Paiement effectue', 'Votre paiement a ete enregistre avec succes.');
-      setCode('');
+      await refresh();
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Paiement impossible.');
     }
   };
 
   return (
     <LocataireScreenShell title="Mes paiements" subtitle="">
-      {contratsSignes.length === 0 ? (
+      {loading ? (
+        <KleaCard>
+          <Text style={styles.emptyText}>Chargement des paiements...</Text>
+        </KleaCard>
+      ) : null}
+
+      {!loading && contratsSignes.length === 0 ? (
         <KleaCard>
           <Text style={styles.emptyText}>
-            Aucun paiement possible pour le moment : vous devez d'abord signer le contrat proposé par le bailleur dans la messagerie.
+            Aucun paiement possible pour le moment : vous devez d abord signer le contrat propose par le bailleur dans la messagerie.
           </Text>
         </KleaCard>
-      ) : (
+      ) : null}
+
+      {!loading && contratsSignes.length > 0 ? (
         <KleaCard style={styles.card}>
           <Text style={styles.title}>Effectuer un paiement</Text>
 
@@ -98,7 +124,7 @@ export default function LocatairePaiementsScreen() {
 
           <Text style={styles.label}>Mode de paiement</Text>
           <View style={styles.pickerWrap}>
-            <Picker selectedValue={modePaiement} onValueChange={(value) => { setModePaiement(value); setCode(''); }} style={styles.picker}>
+            <Picker selectedValue={modePaiement} onValueChange={setModePaiement} style={styles.picker}>
               {modesPaiement.map((mode) => (
                 <Picker.Item key={mode} label={mode} value={mode} />
               ))}
@@ -107,15 +133,16 @@ export default function LocatairePaiementsScreen() {
 
           <KleaButton title="Payer" onPress={handlePayer} style={styles.actionButton} />
         </KleaCard>
-      )}
+      ) : null}
 
       <Text style={styles.sectionTitle}>Historique des paiements</Text>
-      {paiements.length === 0 ? (
+      {paiementsContrat.length === 0 ? (
         <KleaCard><Text style={styles.emptyText}>Aucun paiement enregistre pour ce contrat.</Text></KleaCard>
       ) : null}
 
-      {paiements.map((payment) => (
+      {paiementsContrat.map((payment) => (
         <KleaCard key={payment.id} style={styles.card}>
+          <Text style={styles.line}>Bien: {payment.bienTitre}</Text>
           <Text style={styles.line}>Montant: {payment.montant.toLocaleString('fr-FR')} FCFA</Text>
           <Text style={styles.line}>Date: {new Date(payment.datePaiement).toLocaleDateString('fr-FR')}</Text>
           <Text style={styles.line}>Mode: {payment.modePaiement}</Text>

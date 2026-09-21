@@ -1,22 +1,29 @@
-import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
-import { getAssuranceHabitationLocataire } from '@/utils/biens-store';
+import { getBailleurLocataires, type BailleurLocataire } from '@/utils/bailleur-api';
 
 export default function AssuranceHabitationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ locataireId?: string; bienId?: string }>();
 
   const locataireId = typeof params.locataireId === 'string' ? params.locataireId : '';
-  const bienId = typeof params.bienId === 'string' ? params.bienId : undefined;
-  const assurance = locataireId ? getAssuranceHabitationLocataire(locataireId, bienId) : null;
+  const [locataire, setLocataire] = useState<BailleurLocataire | null>(null);
 
-  if (!assurance) {
+  useEffect(() => {
+    if (!locataireId) return;
+    (async () => {
+      const list = await getBailleurLocataires();
+      setLocataire(list.find((item) => item.id === locataireId) ?? null);
+    })();
+  }, [locataireId]);
+
+  if (!locataire) {
     return (
       <BailleurScreenShell title="Assurance habitation" subtitle="Introuvable">
         <KleaCard>
@@ -28,28 +35,17 @@ export default function AssuranceHabitationScreen() {
   }
 
   return (
-    <BailleurScreenShell title="Assurance habitation" subtitle={assurance.nomComplet}>
+    <BailleurScreenShell title="Assurance habitation" subtitle={locataire.nomComplet}>
       <KleaCard style={styles.card}>
         <Text style={styles.sectionTitle}>Locataire</Text>
-        <Text style={styles.line}>{assurance.nomComplet}</Text>
-        <Text style={styles.line}>{assurance.telephone}</Text>
-        <Text style={styles.line}>{assurance.email}</Text>
+        <Text style={styles.line}>{locataire.nomComplet}</Text>
+        <Text style={styles.line}>{locataire.telephone}</Text>
+        <Text style={styles.line}>{locataire.email}</Text>
       </KleaCard>
 
       <KleaCard style={styles.card}>
         <Text style={styles.sectionTitle}>Fichier d'assurance habitation</Text>
-        <Text style={styles.line}>Nom du fichier: {assurance.assuranceHabitationFichier?.fileName ?? 'Non renseigne'}</Text>
-        <Text style={styles.line}>Type: {assurance.assuranceHabitationFichier?.mimeType ?? '-'}</Text>
-        {assurance.assuranceHabitationFichier ? (
-          <KleaButton
-            title="Ouvrir le fichier"
-            variant="secondary"
-            onPress={() => Linking.openURL(assurance.assuranceHabitationFichier?.fileUrl || '')}
-            style={styles.openButton}
-          />
-        ) : (
-          <Text style={styles.emptyText}>Aucun fichier joint.</Text>
-        )}
+        <Text style={styles.emptyText}>L'assurance habitation n'est pas consultable dans l'espace bailleur.</Text>
       </KleaCard>
 
       <KleaButton title="Retour" variant="secondary" onPress={() => router.back()} />

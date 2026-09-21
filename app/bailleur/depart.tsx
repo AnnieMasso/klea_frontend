@@ -7,7 +7,7 @@ import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors } from '@/constants/theme';
 import { useReauthConfirm } from '@/hooks/use-reauth-confirm';
-import { confirmDepart, getAllDepartsSignales, subscribeBiens } from '@/utils/biens-store';
+import { confirmBailleurDepart, getBailleurDeparts, type BailleurDepart } from '@/utils/bailleur-api';
 
 export default function DepartScreen() {
 	const router = useRouter();
@@ -20,23 +20,30 @@ export default function DepartScreen() {
 				? 'bien'
 				: 'date';
 
-	const [departs, setDeparts] = useState(() => getAllDepartsSignales());
+	const [departs, setDeparts] = useState<BailleurDepart[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [displayMode, setDisplayMode] = useState<'date' | 'bien' | 'locataire'>(initialMode);
 	const [bienFilter, setBienFilter] = useState(initialBienId);
 	const { requestReauth, reauthModal } = useReauthConfirm();
 
 	useEffect(() => {
-		setDeparts(getAllDepartsSignales());
-		const unsubscribe = subscribeBiens(() => setDeparts(getAllDepartsSignales()));
-		return unsubscribe;
+		(async () => {
+			try {
+				setLoading(true);
+				setDeparts(await getBailleurDeparts());
+			} finally {
+				setLoading(false);
+			}
+		})();
 	}, []);
 
-	const onConfirm = async (bienId: string, departId: string) => {
+	const onConfirm = async (departId: string) => {
 		const identityConfirmed = await requestReauth('confirmer ce depart');
 		if (!identityConfirmed) return;
 
-		const ok = confirmDepart(bienId, departId);
-		if (ok) Alert.alert('Depart confirme', 'Le depart signale a ete confirme.');
+		await confirmBailleurDepart(departId);
+		setDeparts(await getBailleurDeparts());
+		Alert.alert('Depart confirme', 'Le depart signale a ete confirme.');
 	};
 
 	useEffect(() => {
@@ -70,7 +77,11 @@ export default function DepartScreen() {
 					</View>
 				</KleaCard>
 
-						{filteredAndSorted.length === 0 ? (
+						{loading ? (
+							<KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+						) : null}
+
+						{!loading && filteredAndSorted.length === 0 ? (
 							<KleaCard><Text style={styles.emptyText}>Aucun depart signale.</Text></KleaCard>
 						) : null}
 
@@ -83,7 +94,7 @@ export default function DepartScreen() {
 								<Text style={styles.line}>Statut: {departure.statut}</Text>
 
 								<View style={styles.actionsColumn}>
-									{departure.statut === 'signale' ? <KleaButton title="Confirmer le depart" onPress={() => onConfirm(departure.bienId, departure.id)} /> : <KleaButton title="Depart confirme" variant="secondary" disabled onPress={() => {}} />}
+									{departure.statut === 'signale' ? <KleaButton title="Confirmer le depart" onPress={() => onConfirm(departure.id)} /> : <KleaButton title="Depart confirme" variant="secondary" disabled onPress={() => {}} />}
 									<KleaButton title="Voir detail bien" variant="secondary" onPress={() => router.push(`/bailleur/detail/${departure.bienId}` as any)} />
 								</View>
 							</KleaCard>

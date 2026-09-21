@@ -7,11 +7,18 @@ import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { ReauthGate } from '@/components/ui/reauth-gate';
 import { KleaColors } from '@/constants/theme';
-import { getAllContrats, getContratStatutAffichage, signContrat, subscribeBiens } from '@/utils/biens-store';
+import { getAuthenticatedUser, getBailleurContratById, getBailleurContrats, signBailleurContrat, type BailleurContrat } from '@/utils/bailleur-api';
+import { downloadContrat } from '@/utils/contrat-pdf';
 
 type DisplayMode = 'date' | 'bien' | 'locataire';
 
-type ContratListItem = ReturnType<typeof getAllContrats>[number];
+type ContratListItem = BailleurContrat;
+
+function getContratStatutAffichage(contract: ContratListItem) {
+	if (contract.etat === 'signe') return 'en cours';
+	if (contract.etat === 'annule' || contract.etat === 'resilie') return 'fini';
+	return 'en cours';
+}
 
 function parseDate(value: string) {
 	const ts = Date.parse(value);
@@ -48,19 +55,87 @@ export default function ContratsScreen() {
 				? 'bien'
 				: 'date';
 
-	const [items, setItems] = useState(() => getAllContrats());
+	const [items, setItems] = useState<ContratListItem[]>([]);
+	const [loading, setLoading] = useState(true);
 	const [displayMode, setDisplayMode] = useState<DisplayMode>(initialMode);
 	const [bienFilter, setBienFilter] = useState(initialBienId);
+	const [downloadingId, setDownloadingId] = useState<string | null>(null);
+	const [myDisplayName, setMyDisplayName] = useState('Bailleur');
+
+	const loadContracts = async () => {
+		try {
+			setLoading(true);
+			const data = await getBailleurContrats();
+			setItems(data);
+		} catch (error) {
+			Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.');
+		} finally {
+			setLoading(false);
+		}
+	};
 
 	useEffect(() => {
-		setItems(getAllContrats());
-		const unsubscribe = subscribeBiens(() => setItems(getAllContrats()));
-		return unsubscribe;
+		loadContracts();
 	}, []);
 
-	const onSign = (bienId: string, contratId: string) => {
-		const ok = signContrat(bienId, contratId);
-		if (ok) Alert.alert('Contrat signe', 'La signature du contrat a ete enregistree.');
+	useEffect(() => {
+		let cancelled = false;
+
+		getAuthenticatedUser()
+			.then((user) => {
+				if (cancelled) return;
+				const fullName = [user.prenom ?? '', user.nom ?? ''].map((part) => part.trim()).filter(Boolean).join(' ');
+				setMyDisplayName(fullName || user.email || 'Bailleur');
+			})
+			.catch(() => {
+				if (!cancelled) setMyDisplayName('Bailleur');
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	const onSign = async (contratId: string) => {
+		try {
+			await signBailleurContrat(contratId);
+			Alert.alert('Contrat signe', 'La signature du contrat a ete enregistree.');
+			await loadContracts();
+		} catch (error) {
+			Alert.alert('Erreur', error instanceof Error ? error.message : 'Signature impossible.');
+		}
+	};
+
+	const onDownload = async (contratId: string) => {
+		if (downloadingId === contratId) return;
+
+		setDownloadingId(contratId);
+		try {
+			const contract = await getBailleurContratById(contratId);
+			if (!contract) {
+				Alert.alert('Erreur', 'Contrat introuvable.');
+				return;
+			}
+
+			await downloadContrat({
+				id: contract.id,
+				bienTitre: contract.bienTitre,
+				typeBien: 'Bien immobilier',
+				typeContrat: 'determine',
+				etat: contract.etat === 'resilie' ? 'annule' : contract.etat,
+				dateSignature: contract.dateDebut,
+				dureeMois: contract.dureeMois,
+				montant: contract.montant,
+				lieu: '-',
+				conditions: [],
+				bailleur: { nom: myDisplayName, telephone: '-', email: '-' },
+				locataire: { nom: contract.locataire, telephone: '-', email: '-' },
+			});
+		} catch (error) {
+			Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de telecharger le contrat.');
+		} finally {
+			setDownloadingId(null);
+		}
 	};
 
 	useEffect(() => {
@@ -87,7 +162,11 @@ export default function ContratsScreen() {
 
 				</KleaCard>
 
-						{filteredAndSorted.length === 0 ? (
+						{loading ? (
+							<KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+						) : null}
+
+						{!loading && filteredAndSorted.length === 0 ? (
 							<KleaCard><Text style={styles.emptyText}>Aucun contrat disponible.</Text></KleaCard>
 						) : null}
 
@@ -101,8 +180,10 @@ export default function ContratsScreen() {
 								<Text style={styles.statusLine}>Statut: {getContratStatutAffichage(contract)}</Text>
 
 								<View style={styles.actions}>
-									{!contract.signe ? <KleaButton title="Signer" variant="secondary" onPress={() => onSign(contract.bienId, contract.id)} /> : null}
+									{contract.etat === 'en_attente' ? <KleaButton title="Signer" variant="secondary" onPress={() => onSign(contract.id)} /> : null}
+									{contract.etat === 'en_attente' ? <KleaButton title="Editer avant signature" variant="secondary" onPress={() => router.push(`/bailleur/nouveau_contrat?conversationId=${contract.conversationId}&contratId=${contract.id}` as any)} /> : null}
 									<KleaButton title="Voir le contrat de bail" variant="secondary" onPress={() => router.push(`/bailleur/contrat/${contract.id}?bienId=${contract.bienId}` as any)} />
+									<KleaButton title={downloadingId === contract.id ? 'Generation...' : 'Télécharger'} variant="secondary" onPress={() => onDownload(contract.id)} disabled={downloadingId === contract.id} />
 									<KleaButton title="Voir les details du bien associé" onPress={() => router.push(`/bailleur/detail/${contract.bienId}` as any)} />
 								</View>
 							</KleaCard>

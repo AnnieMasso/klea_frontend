@@ -1,16 +1,17 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { ReauthGate } from '@/components/ui/reauth-gate';
 import { KleaColors } from '@/constants/theme';
-import { getAllPaiements, subscribeBiens } from '@/utils/biens-store';
+import { getBailleurPaiements, type BailleurPaiement } from '@/utils/bailleur-api';
+import { downloadFacture } from '@/utils/facture';
 
 type DisplayMode = 'date' | 'bien' | 'locataire';
-type PaiementListItem = ReturnType<typeof getAllPaiements>[number];
+type PaiementListItem = BailleurPaiement;
 
 function parseDate(value: string) {
   const ts = Date.parse(value);
@@ -47,14 +48,26 @@ export default function PaiementsScreen() {
         ? 'bien'
         : 'date';
 
-  const [items, setItems] = useState(() => getAllPaiements());
+  const [items, setItems] = useState<PaiementListItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(initialMode);
   const [bienFilter, setBienFilter] = useState(initialBienId);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const loadPaiements = async () => {
+    try {
+      setLoading(true);
+      const data = await getBailleurPaiements();
+      setItems(data);
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setItems(getAllPaiements());
-    const unsubscribe = subscribeBiens(() => setItems(getAllPaiements()));
-    return unsubscribe;
+    loadPaiements();
   }, []);
 
   useEffect(() => {
@@ -68,6 +81,28 @@ export default function PaiementsScreen() {
     return sortByMode(filtered, displayMode);
   }, [items, bienFilter, displayMode]);
 
+  const handleDownload = async (payment: BailleurPaiement) => {
+    if (downloadingId === payment.id) return;
+
+    setDownloadingId(payment.id);
+    try {
+      await downloadFacture({
+        id: payment.id,
+        locataire: payment.locataire,
+        bienTitre: payment.bienTitre,
+        montant: payment.montant,
+        datePaiement: payment.datePaiement,
+        dureeMois: payment.dureeMois,
+        modePaiement: payment.modePaiement,
+        bailleur: payment.bailleur,
+      });
+    } catch {
+      Alert.alert('Erreur', 'Impossible de telecharger la facture.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <ReauthGate reason="voir tous les paiements">
       <BailleurScreenShell title="Paiements" subtitle="">
@@ -80,7 +115,11 @@ export default function PaiementsScreen() {
           </View>
         </KleaCard>
 
-        {filteredAndSorted.length === 0 ? (
+        {loading ? (
+          <KleaCard><Text style={styles.emptyText}>Chargement...</Text></KleaCard>
+        ) : null}
+
+        {!loading && filteredAndSorted.length === 0 ? (
           <KleaCard><Text style={styles.emptyText}>Aucun paiement disponible.</Text></KleaCard>
         ) : null}
 
@@ -97,6 +136,12 @@ export default function PaiementsScreen() {
                 title="Voir le paiement"
                 variant="secondary"
                 onPress={() => router.push(`/bailleur/facture/${payment.id}` as any)}
+              />
+              <KleaButton
+                title={downloadingId === payment.id ? 'Generation...' : 'Télécharger la facture'}
+                variant="secondary"
+                onPress={() => handleDownload(payment)}
+                disabled={downloadingId === payment.id}
               />
               <KleaButton title="Voir les détails du bien" onPress={() => router.push(`/bailleur/detail/${payment.bienId}` as any)} />
             </View>

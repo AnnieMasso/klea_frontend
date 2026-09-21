@@ -1,43 +1,58 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaInput } from '@/components/ui/klea-input';
 import { LocataireScreenShell } from '@/components/ui/locataire-screen-shell';
 import { KleaColors, KleaRadius } from '@/constants/theme';
-import { getBiens, isBailleurVerified, subscribeBiens, type BienDetail } from '@/utils/biens-store';
+import { getLocataireAuthUser, getLocataireVisibleBiens, type LocataireBien } from '@/utils/locataire-api';
 import { resolveImageSource } from '@/utils/local-photos';
+import { buildUserDashboardPath } from '@/utils/user-route';
 
-const labelsByStatus: Record<'libre' | 'jamais_loue', string> = {
+const labelsByStatus: Record<'libre' | 'en_location', string> = {
   libre: 'Disponible',
-  jamais_loue: 'Jamais loué',
+  en_location: 'En location',
 };
 
 const typeOptions = ['Tous', 'Appartement', 'Maison', 'Studio', 'Bureau', 'Local commercial', 'Boutique', 'Terrain'];
 
-export default function LocataireBiensScreen() {
+export function LocataireBiensScreenView() {
   const router = useRouter();
-  const [biens, setBiens] = useState<BienDetail[]>(() => getBiens());
+  const [biens, setBiens] = useState<LocataireBien[]>([]);
+  const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('Tous');
   const [montantMax, setMontantMax] = useState('');
   const [piecesMin, setPiecesMin] = useState('');
 
   useEffect(() => {
-    setBiens(getBiens());
-    const unsubscribe = subscribeBiens(() => setBiens(getBiens()));
-    return unsubscribe;
+    let mounted = true;
+
+    getLocataireVisibleBiens()
+      .then((data) => {
+        if (!mounted) return;
+        setBiens(data);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        Alert.alert('Erreur', error instanceof Error ? error.message : 'Chargement impossible.');
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const biensDisponibles = useMemo(
     () =>
       biens.filter(
-        (item) =>
-          item.occupationStatut !== 'en_location' &&
-          item.validationStatut === 'verifie' &&
-          isBailleurVerified(item.bailleurId),
+        (item) => item.occupationStatut !== 'en_location' && item.validationStatut === 'verifie',
       ),
     [biens],
   );
@@ -97,7 +112,13 @@ export default function LocataireBiensScreen() {
         </Pressable>
       </KleaCard>
 
-      {biensFiltres.length === 0 ? (
+      {loading ? (
+        <KleaCard>
+          <Text style={styles.emptyText}>Chargement des biens...</Text>
+        </KleaCard>
+      ) : null}
+
+      {!loading && biensFiltres.length === 0 ? (
         <KleaCard>
           <Text style={styles.emptyText}>
             {biensDisponibles.length === 0 ? 'Aucun bien disponible pour le moment.' : 'Aucun bien ne correspond a vos filtres.'}
@@ -109,7 +130,7 @@ export default function LocataireBiensScreen() {
         <KleaCard key={bien.id} style={styles.bienCard}>
           <View style={styles.mediaBlock}>
             <View style={styles.mediaStatusChip}>
-              <Text style={styles.mediaStatusText}>{labelsByStatus[bien.occupationStatut as 'libre' | 'jamais_loue']}</Text>
+              <Text style={styles.mediaStatusText}>{labelsByStatus[bien.occupationStatut]}</Text>
             </View>
             {bien.images[0] ? (
               <Image source={resolveImageSource(bien.images[0].url)} style={styles.mediaImage} resizeMode="cover" />
@@ -144,6 +165,42 @@ export default function LocataireBiensScreen() {
       ))}
     </LocataireScreenShell>
   );
+}
+
+export default function LocataireBiensScreen() {
+  const [targetPath, setTargetPath] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getLocataireAuthUser()
+      .then((user) => {
+        if (!mounted) return;
+        setTargetPath(buildUserDashboardPath(user));
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setTargetPath('/locataire');
+      })
+      .finally(() => {
+        if (mounted) setChecked(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!checked) {
+    return null;
+  }
+
+  if (targetPath && targetPath !== '/locataire') {
+    return <Redirect href={targetPath as any} />;
+  }
+
+  return <LocataireBiensScreenView />;
 }
 
 const styles = StyleSheet.create({

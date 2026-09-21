@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text } from 'react-native';
 
 import { BailleurScreenShell } from '@/components/ui/bailleur-screen-shell';
 import { KleaButton } from '@/components/ui/klea-button';
 import { KleaCard } from '@/components/ui/klea-card';
 import { KleaColors, KleaRadius } from '@/constants/theme';
-import { getCniLocataire } from '@/utils/biens-store';
+import { getBailleurLocataires, type BailleurLocataire } from '@/utils/bailleur-api';
 import { resolveImageSource } from '@/utils/local-photos';
 
 export default function CniLocataireScreen() {
@@ -13,15 +14,22 @@ export default function CniLocataireScreen() {
   const params = useLocalSearchParams<{ locataireId?: string; bienId?: string }>();
 
   const locataireId = typeof params.locataireId === 'string' ? params.locataireId : '';
-  const bienId = typeof params.bienId === 'string' ? params.bienId : undefined;
-  const cni = locataireId ? getCniLocataire(locataireId, bienId) : null;
+  const [locataire, setLocataire] = useState<BailleurLocataire | null>(null);
 
-  if (!cni) {
+  useEffect(() => {
+    if (!locataireId) return;
+    (async () => {
+      const list = await getBailleurLocataires();
+      setLocataire(list.find((item) => item.id === locataireId) ?? null);
+    })();
+  }, [locataireId]);
+
+  if (!locataire) {
     return (
       <BailleurScreenShell title="CNI du locataire" subtitle="Introuvable">
         <KleaCard>
           <Text style={styles.emptyText}>
-            Aucune CNI disponible : ce document n'est consultable que pour votre locataire actuel.
+            Aucune information CNI disponible pour ce locataire.
           </Text>
           <KleaButton title="Retour" variant="secondary" onPress={() => router.back()} />
         </KleaCard>
@@ -30,30 +38,22 @@ export default function CniLocataireScreen() {
   }
 
   return (
-    <BailleurScreenShell title="CNI du locataire" subtitle={cni.nomComplet}>
+    <BailleurScreenShell title="CNI du locataire" subtitle={locataire.nomComplet}>
       <KleaCard style={styles.card}>
         <Text style={styles.sectionTitle}>Locataire</Text>
-        <Text style={styles.line}>{cni.nomComplet}</Text>
-        <Text style={styles.line}>{cni.telephone}</Text>
-        <Text style={styles.line}>{cni.email}</Text>
+        <Text style={styles.line}>{locataire.nomComplet}</Text>
+        <Text style={styles.line}>{locataire.telephone}</Text>
+        <Text style={styles.line}>{locataire.email}</Text>
       </KleaCard>
 
       <KleaCard style={styles.card}>
         <Text style={styles.sectionTitle}>CNI recto</Text>
-        {cni.cniRecto ? (
-          <Image source={resolveImageSource(cni.cniRecto)} style={styles.cniImage} resizeMode="cover" />
-        ) : (
-          <Text style={styles.emptyText}>Aucune photo renseignee.</Text>
-        )}
+        <Text style={styles.emptyText}>Le document CNI n'est pas expose par l'API actuelle.</Text>
       </KleaCard>
 
       <KleaCard style={styles.card}>
         <Text style={styles.sectionTitle}>CNI verso</Text>
-        {cni.cniVerso ? (
-          <Image source={resolveImageSource(cni.cniVerso)} style={styles.cniImage} resizeMode="cover" />
-        ) : (
-          <Text style={styles.emptyText}>Aucune photo renseignee.</Text>
-        )}
+        <Text style={styles.emptyText}>Le document CNI n'est pas expose par l'API actuelle.</Text>
       </KleaCard>
 
       <KleaButton title="Retour" variant="secondary" onPress={() => router.back()} />
